@@ -69,7 +69,13 @@ test "STR0_255 serialized" {
     const value = [_]u8{0x65} ** 10;
     const expected = len ++ value;
 
-    const after = try serdeTestAlloc(STR0_255, testing.allocator, before, expected.len, expected);
+    const after = try serdeTestAlloc(
+        STR0_255,
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
     defer after.deinit(testing.allocator);
 
     try expect(mem.eql(u8, before.value, after.value));

@@ -13,7 +13,7 @@ const MiningFlags = @import("mining.zig").MiningFlags;
 const MessageType = types.MessageType;
 
 /// The CHANNEL_BIT_MASK is used to mask out the MSB to identify if a message
-/// type has a channel_id in it's message frame.
+/// type has a channel_id in its message frame.
 pub const CHANNEL_BIT_MASK = 0x8000;
 
 // TODO: Might need to move this to a per message basis.
@@ -148,7 +148,8 @@ pub fn SetupConnection(comptime T: type) type {
             if (@intToEnum(MessageType, msg_type) != SetupConnection(MiningFlags).message_type)
                 return error.InvalidMessageType;
 
-            _ = try reader.readIntNative(u24);
+            const len = try reader.readIntNative(u24);
+            _ = len;
 
             return read(gpa, reader);
         }
@@ -198,7 +199,13 @@ test "SetupConnection Mining serialized" {
         0x75, 0x69, 0x64, // device_id
     };
 
-    const after = try serdeTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try serdeTestAlloc(
+        SetupConnection(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
@@ -224,7 +231,13 @@ test "SetupConnection Mining frame" {
         0x51, 0x00, 0x00, // message_length
     };
 
-    const after = try frameTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try frameTestAlloc(
+        SetupConnection(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
