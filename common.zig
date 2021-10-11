@@ -198,7 +198,13 @@ test "SetupConnection Mining serialized" {
         0x75, 0x69, 0x64, // device_id
     };
 
-    const after = try serdeTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try serdeTestAlloc(
+        SetupConnection(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
@@ -224,7 +230,13 @@ test "SetupConnection Mining frame" {
         0x51, 0x00, 0x00, // message_length
     };
 
-    const after = try frameTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try frameTestAlloc(
+        SetupConnection(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
