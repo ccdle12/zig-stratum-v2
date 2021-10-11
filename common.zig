@@ -148,7 +148,8 @@ pub fn SetupConnection(comptime T: type) type {
             if (@intToEnum(MessageType, msg_type) != SetupConnection(MiningFlags).message_type)
                 return error.InvalidMessageType;
 
-            _ = try reader.readIntNative(u24);
+            const len = try reader.readIntNative(u24);
+            _ = len;
 
             return read(gpa, reader);
         }
