@@ -30,8 +30,7 @@ pub const STR0_255 = struct {
         return @sizeOf(u8) + @intCast(u8, self.value.len);
     }
 
-    pub fn write(self: STR0_255, buf: *std.ArrayList(u8)) !void {
-        var writer = &buf.writer();
+    pub fn write(self: STR0_255, writer: anytype) !void {
         try writer.writeIntLittle(u8, @intCast(u8, self.value.len));
         try writer.writeAll(self.value);
     }

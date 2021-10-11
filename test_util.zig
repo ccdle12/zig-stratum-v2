@@ -20,8 +20,9 @@ pub fn serdeTestAlloc(comptime T: type, gpa: *mem.Allocator, before: T, comptime
 
 fn serdeTest(comptime T: type, before: T, comptime size: comptime_int, expected: [size]u8) !std.ArrayList(u8) {
     var buf = std.ArrayList(u8).init(testing.allocator);
+    const writer = buf.writer();
 
-    try before.write(&buf);
+    try before.write(writer);
     try expect(mem.eql(u8, buf.items, &expected));
 
     return buf;

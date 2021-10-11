@@ -6,6 +6,8 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
+const serdeTestAlloc = test_util.serdeTestAlloc;
+const frameTestAlloc = test_util.frameTestAlloc;
 const STR0_255 = types.STR0_255;
 const MiningFlags = @import("mining.zig").MiningFlags;
 const MessageType = types.MessageType;
@@ -84,20 +86,27 @@ pub fn SetupConnection(comptime T: type) type {
         }
 
         pub fn msg_len(self: Self) u24 {
-            return @sizeOf(u16) + @sizeOf(u16) + @sizeOf(u32) + self.endpoint_host.type_len() + @sizeOf(u16) + self.vendor.type_len() + self.hardware_version.type_len() + self.firmware.type_len() + self.device_id.type_len();
+            return @sizeOf(u16) +
+                @sizeOf(u16) +
+                @sizeOf(u32) +
+                self.endpoint_host.type_len() +
+                @sizeOf(u16) +
+                self.vendor.type_len() +
+                self.hardware_version.type_len() +
+                self.firmware.type_len() +
+                self.device_id.type_len();
         }
 
-        pub fn write(self: Self, buf: *std.ArrayList(u8)) !void {
-            var writer = &buf.writer();
+        pub fn write(self: Self, writer: anytype) !void {
             try writer.writeIntLittle(u16, self.min_version);
             try writer.writeIntLittle(u16, self.max_version);
             try writer.writeIntLittle(u32, self.flags);
-            try self.endpoint_host.write(buf);
+            try self.endpoint_host.write(writer);
             try writer.writeIntLittle(u16, self.endpoint_port);
-            try self.vendor.write(buf);
-            try self.hardware_version.write(buf);
-            try self.firmware.write(buf);
-            try self.device_id.write(buf);
+            try self.vendor.write(writer);
+            try self.hardware_version.write(writer);
+            try self.firmware.write(writer);
+            try self.device_id.write(writer);
         }
 
         pub fn read(gpa: *mem.Allocator, reader: anytype) !Self {
@@ -127,7 +136,7 @@ pub fn SetupConnection(comptime T: type) type {
             try writer.writeIntLittle(u16, EXTENSION_TYPE);
             try writer.writeIntLittle(u8, @enumToInt(Self.message_type));
             try writer.writeIntLittle(u24, self.msg_len());
-            try self.write(buf);
+            try self.write(writer);
         }
 
         pub fn unframe(gpa: *mem.Allocator, reader: anytype) !Self {
@@ -189,7 +198,7 @@ test "SetupConnection Mining serialized" {
         0x75, 0x69, 0x64, // device_id
     };
 
-    const after = try test_util.serdeTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try serdeTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
@@ -215,7 +224,7 @@ test "SetupConnection Mining frame" {
         0x51, 0x00, 0x00, // message_length
     };
 
-    const after = try test_util.frameTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
+    const after = try frameTestAlloc(SetupConnection(MiningFlags), testing.allocator, before, expected.len, expected);
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
