@@ -1,1 +1,2 @@
-# zig-stratum-v2
+# Zig StratumV2
+
