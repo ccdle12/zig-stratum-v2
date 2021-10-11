@@ -13,7 +13,7 @@ const MiningFlags = @import("mining.zig").MiningFlags;
 const MessageType = types.MessageType;
 
 /// The CHANNEL_BIT_MASK is used to mask out the MSB to identify if a message
-/// type has a channel_id in it's message frame.
+/// type has a channel_id in its message frame.
 pub const CHANNEL_BIT_MASK = 0x8000;
 
 // TODO: Might need to move this to a per message basis.
