@@ -117,17 +117,6 @@ const UpdateChannel = struct {
     }
 };
 
-test "MiningFlags serialized" {
-    const requires_standard_jobs = MiningFlags.RequiresStandardJobs;
-    try expect(@enumToInt(requires_standard_jobs) == 1);
-
-    const requires_work_selection = MiningFlags.RequiresWorkSelection;
-    try expect(@enumToInt(requires_work_selection) == 2);
-
-    const requires_version_rolling = MiningFlags.RequiresVersionRolling;
-    try expect(@enumToInt(requires_version_rolling) == 4);
-}
-
 test "MiningFlags contains" {
     const TestCase = struct {
         input: u32,
