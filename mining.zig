@@ -75,15 +75,12 @@ const UpdateChannel = struct {
         return @sizeOf(u32) + @sizeOf(f32) + self.max_target.len;
     }
 
-    pub fn write(self: UpdateChannel, buf: *std.ArrayList(u8)) !void {
-        var writer = &buf.writer();
+    pub fn write(self: UpdateChannel, writer: anytype) !void {
         try writer.writeIntLittle(u32, self.channel_id);
         try writer.writeAll(mem.asBytes(&self.nominal_hash_rate));
         try writer.writeAll(&self.max_target);
     }
 
-    // TODO: reader is anytype for now, how do I make sure we can reference a reader
-    // and have a comptime error?
     pub fn read(reader: anytype) !UpdateChannel {
         const channel_id = try reader.readIntNative(u32);
         const nominal_hash_rate = @bitCast(f32, try reader.readBytesNoEof(4));
@@ -101,7 +98,7 @@ const UpdateChannel = struct {
         try writer.writeIntLittle(u16, EXTENSION_TYPE | CHANNEL_BIT_MASK);
         try writer.writeIntLittle(u8, @enumToInt(UpdateChannel.message_type));
         try writer.writeIntLittle(u24, self.msg_len());
-        try self.write(buf);
+        try self.write(writer);
     }
 
     pub fn unframe(reader: anytype) !UpdateChannel {
