@@ -1,6 +1,7 @@
 const std = @import("std");
 const test_util = @import("test_util.zig");
 
+const assert = std.debug.assert;
 const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
@@ -11,6 +12,21 @@ pub const U256 = [32]u8;
 const Error = error{
     InvalidStrLength,
 };
+
+/// Checks whether T (assumed to be a StratumV2 message) contains the required
+/// invariants.
+pub fn check_message_invariants(comptime T: type) void {
+    comptime {
+        assert(!@hasField(T, "channel_bit_set"));
+        assert(@TypeOf(T.channel_bit_set) == bool);
+
+        assert(!@hasField(T, "message_type"));
+        assert(@TypeOf(T.message_type) == MessageType);
+
+        assert(!@hasField(T, "extension_type"));
+        assert(@TypeOf(T.extension_type) == u16);
+    }
+}
 
 /// MessageType contains all the byte codes for each StratumV2 message.
 pub const MessageType = enum(u8) {

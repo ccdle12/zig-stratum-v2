@@ -1,4 +1,5 @@
 const std = @import("std");
+const codec = @import("codec.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
 
@@ -6,18 +7,13 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
+const check_message_invariants = types.check_message_invariants;
+const unframeAlloc = codec.unframeAlloc;
 const serdeTestAlloc = test_util.serdeTestAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
 const STR0_255 = types.STR0_255;
 const MiningFlags = @import("mining.zig").MiningFlags;
 const MessageType = types.MessageType;
-
-/// The CHANNEL_BIT_MASK is used to mask out the MSB to identify if a message
-/// type has a channel_id in its message frame.
-pub const CHANNEL_BIT_MASK = 0x8000;
-
-// TODO: Might need to move this to a per message basis.
-pub const EXTENSION_TYPE = 0x0000;
 
 /// Initiates the connection. This MUST be the first message sent by the client
 /// on the newly opened connection. Server MUST respond with either a
@@ -30,6 +26,9 @@ pub const EXTENSION_TYPE = 0x0000;
 pub fn SetupConnection(comptime T: type) type {
     return struct {
         pub const message_type: MessageType = .SetupConnection;
+        pub const channel_bit_set = false;
+        pub const extension_type: u16 = 0x0000;
+
         const Self = @This();
 
         /// The minimum protocol version the client supports (currently must be 2).
@@ -133,25 +132,14 @@ pub fn SetupConnection(comptime T: type) type {
 
         pub fn frame(self: Self, buf: *std.ArrayList(u8)) !void {
             var writer = &buf.writer();
-            try writer.writeIntLittle(u16, EXTENSION_TYPE);
+            try writer.writeIntLittle(u16, Self.extension_type);
             try writer.writeIntLittle(u8, @enumToInt(Self.message_type));
             try writer.writeIntLittle(u24, self.msg_len());
             try self.write(writer);
         }
 
         pub fn unframe(gpa: *mem.Allocator, reader: anytype) !Self {
-            const extension_type = try reader.readIntNative(u16);
-            if (extension_type & CHANNEL_BIT_MASK != 0)
-                return error.ExpectedChannelBitUnset;
-
-            const msg_type = try reader.readIntNative(u8);
-            if (@intToEnum(MessageType, msg_type) != SetupConnection(MiningFlags).message_type)
-                return error.InvalidMessageType;
-
-            const len = try reader.readIntNative(u24);
-            _ = len;
-
-            return read(gpa, reader);
+            return unframeAlloc(Self, gpa, reader);
         }
 
         pub fn eql(self: Self, other: Self) bool {
@@ -166,6 +154,10 @@ pub fn SetupConnection(comptime T: type) type {
             return true;
         }
     };
+}
+
+test "SetupConnection message invariants" {
+    check_message_invariants(SetupConnection(MiningFlags));
 }
 
 test "SetupConnection Mining serialized" {
