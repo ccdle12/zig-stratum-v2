@@ -8,7 +8,6 @@ const expect = testing.expect;
 const mem = std.mem;
 
 const check_message_invariants = types.check_message_invariants;
-const unframeAlloc = codec.unframeAlloc;
 const serdeTestAlloc = test_util.serdeTestAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
 const STR0_255 = types.STR0_255;
@@ -130,16 +129,12 @@ pub fn SetupConnection(comptime T: type) type {
             self.device_id.deinit(gpa);
         }
 
-        pub fn frame(self: Self, buf: *std.ArrayList(u8)) !void {
-            var writer = &buf.writer();
-            try writer.writeIntLittle(u16, Self.extension_type);
-            try writer.writeIntLittle(u8, @enumToInt(Self.message_type));
-            try writer.writeIntLittle(u24, self.msg_len());
-            try self.write(writer);
+        pub fn frame(self: Self, writer: anytype) !void {
+            try codec.frame(Self, self, writer);
         }
 
         pub fn unframe(gpa: *mem.Allocator, reader: anytype) !Self {
-            return unframeAlloc(Self, gpa, reader);
+            return codec.unframeAlloc(Self, gpa, reader);
         }
 
         pub fn eql(self: Self, other: Self) bool {

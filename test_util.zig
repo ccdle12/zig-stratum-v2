@@ -36,9 +36,8 @@ fn serdeTest(
     expected: [size]u8,
 ) !std.ArrayList(u8) {
     var buf = std.ArrayList(u8).init(testing.allocator);
-    const writer = buf.writer();
 
-    try before.write(writer);
+    try before.write(buf.writer());
     try expect(mem.eql(u8, buf.items, &expected));
 
     return buf;
@@ -76,7 +75,7 @@ fn frameTest(
 ) !std.ArrayList(u8) {
     var buf = std.ArrayList(u8).init(testing.allocator);
 
-    try before.frame(&buf);
+    try before.frame(buf.writer());
     try expect(mem.eql(u8, buf.items[0..6], &expected));
 
     return buf;
