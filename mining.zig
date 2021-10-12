@@ -1,6 +1,5 @@
 const std = @import("std");
 const codec = @import("codec.zig");
-const common = @import("common.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
 
@@ -8,13 +7,11 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
-const CHANNEL_BIT_MASK = codec.CHANNEL_BIT_MASK;
 const check_message_invariants = types.check_message_invariants;
 const MessageType = types.MessageType;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const U256 = types.U256;
-const unframeNoAlloc = codec.unframeNoAlloc;
 
 const Error = error{
     InvalidMessageType,
@@ -30,16 +27,12 @@ pub const MiningFlags = enum(u32) {
     RequiresWorkSelection = 1 << 1,
     RequiresVersionRolling = 1 << 2,
 
-    /// Convert a slice of MiningFlags variants to its u32 representation of
-    /// each corresponding set bit.
     pub fn serialize(flags: []const MiningFlags) u32 {
         var f: u32 = 0;
         for (flags) |flag| f |= @enumToInt(flag);
         return f;
     }
 
-    /// Checks whether a particular flag has its corresponding bit set in a u32
-    /// representation.
     pub fn contains(flags: u32, flag: MiningFlags) bool {
         return flags & @enumToInt(flag) != 0;
     }
@@ -97,16 +90,12 @@ const UpdateChannel = struct {
         };
     }
 
-    pub fn frame(self: UpdateChannel, buf: *std.ArrayList(u8)) !void {
-        var writer = &buf.writer();
-        try writer.writeIntLittle(u16, UpdateChannel.extension_type | CHANNEL_BIT_MASK);
-        try writer.writeIntLittle(u8, @enumToInt(UpdateChannel.message_type));
-        try writer.writeIntLittle(u24, self.msg_len());
-        try self.write(writer);
+    pub fn frame(self: UpdateChannel, writer: anytype) !void {
+        try codec.frame(UpdateChannel, self, writer);
     }
 
     pub fn unframe(reader: anytype) !UpdateChannel {
-        return unframeNoAlloc(UpdateChannel, reader);
+        return codec.unframeNoAlloc(UpdateChannel, reader);
     }
 };
 
