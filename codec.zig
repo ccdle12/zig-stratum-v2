@@ -15,8 +15,7 @@ pub fn unframeNoAlloc(
     comptime T: type,
     reader: anytype,
 ) !T {
-    check_message_invariants(T);
-    try unframe(T, T.channel_bit_set, reader);
+    try unframe(T, reader);
     return T.read(reader);
 }
 
@@ -25,24 +24,21 @@ pub fn unframeAlloc(
     gpa: *mem.Allocator,
     reader: anytype,
 ) !T {
-    check_message_invariants(T);
-    try unframe(T, T.channel_bit_set, reader);
+    try unframe(T, reader);
     return T.read(gpa, reader);
 }
 
 fn unframe(
     comptime T: type,
-    channel_bit_set: bool,
     reader: anytype,
 ) !void {
-    const extension_type = try reader.readIntNative(u16);
+    check_message_invariants(T);
 
-    if (channel_bit_set) {
-        if (extension_type & CHANNEL_BIT_MASK == 0)
-            return error.ExpectedChannelBitSet;
+    const extension_type = try reader.readIntNative(u16);
+    if (T.channel_bit_set) {
+        if (extension_type & CHANNEL_BIT_MASK == 0) return error.ExpectedChannelBitSet;
     } else {
-        if (extension_type & CHANNEL_BIT_MASK != 0)
-            return error.ExpectedChannelBitUnset;
+        if (extension_type & CHANNEL_BIT_MASK != 0) return error.ExpectedChannelBitUnset;
     }
 
     const msg_type = try reader.readIntNative(u8);
