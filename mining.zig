@@ -27,16 +27,12 @@ pub const MiningFlags = enum(u32) {
     RequiresWorkSelection = 1 << 1,
     RequiresVersionRolling = 1 << 2,
 
-    /// Convert a slice of MiningFlags variants to its u32 representation of
-    /// each corresponding set bit.
     pub fn serialize(flags: []const MiningFlags) u32 {
         var f: u32 = 0;
         for (flags) |flag| f |= @enumToInt(flag);
         return f;
     }
 
-    /// Checks whether a particular flag has its corresponding bit set in a u32
-    /// representation.
     pub fn contains(flags: u32, flag: MiningFlags) bool {
         return flags & @enumToInt(flag) != 0;
     }
