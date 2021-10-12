@@ -1,5 +1,5 @@
 const std = @import("std");
-const codec = @import("codec");
+const codec = @import("codec.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
 
@@ -7,6 +7,7 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
+const check_message_invariants = types.check_message_invariants;
 const unframeAlloc = codec.unframeAlloc;
 const serdeTestAlloc = test_util.serdeTestAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
@@ -26,7 +27,7 @@ pub fn SetupConnection(comptime T: type) type {
     return struct {
         pub const message_type: MessageType = .SetupConnection;
         pub const channel_bit_set = false;
-        pub const extension_type = 0x0000;
+        pub const extension_type: u16 = 0x0000;
 
         const Self = @This();
 
@@ -153,6 +154,10 @@ pub fn SetupConnection(comptime T: type) type {
             return true;
         }
     };
+}
+
+test "SetupConnection message invariants" {
+    check_message_invariants(SetupConnection(MiningFlags));
 }
 
 test "SetupConnection Mining serialized" {

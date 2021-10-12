@@ -4,6 +4,7 @@ const types = @import("types.zig");
 const assert = std.debug.assert;
 const mem = std.mem;
 
+const check_message_invariants = types.check_message_invariants;
 const MessageType = types.MessageType;
 
 /// The CHANNEL_BIT_MASK is used to mask out the MSB to identify if a message
@@ -14,7 +15,7 @@ pub fn unframeNoAlloc(
     comptime T: type,
     reader: anytype,
 ) !T {
-    comptime assert(@TypeOf(T.channel_bit_set) == bool);
+    check_message_invariants(T);
     try unframe(T, T.channel_bit_set, reader);
     return T.read(reader);
 }
@@ -24,7 +25,7 @@ pub fn unframeAlloc(
     gpa: *mem.Allocator,
     reader: anytype,
 ) !T {
-    comptime assert(@TypeOf(T.channel_bit_set) == bool);
+    check_message_invariants(T);
     try unframe(T, T.channel_bit_set, reader);
     return T.read(gpa, reader);
 }

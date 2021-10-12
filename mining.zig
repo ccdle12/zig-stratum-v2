@@ -9,6 +9,7 @@ const expect = testing.expect;
 const mem = std.mem;
 
 const CHANNEL_BIT_MASK = codec.CHANNEL_BIT_MASK;
+const check_message_invariants = types.check_message_invariants;
 const MessageType = types.MessageType;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
@@ -49,7 +50,7 @@ pub const MiningFlags = enum(u32) {
 const UpdateChannel = struct {
     pub const message_type: MessageType = .UpdateChannel;
     pub const channel_bit_set = true;
-    pub const extension_type = 0x0000;
+    pub const extension_type: u16 = 0x0000;
 
     /// The unique identifier of the channel.
     channel_id: u32,
@@ -161,6 +162,10 @@ test "MiningFlags contains" {
 
     for (test_cases) |case|
         try expect(MiningFlags.contains(case.input, case.flag) == case.expected);
+}
+
+test "UpdateChannel message invariants" {
+    check_message_invariants(UpdateChannel);
 }
 
 test "UpdateChannel serialized" {
