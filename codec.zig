@@ -52,3 +52,19 @@ fn unframe(
     const len = try reader.readIntNative(u24);
     _ = len;
 }
+
+pub fn frame(
+    comptime T: type,
+    msg: T,
+    writer: anytype,
+) !void {
+    check_message_invariants(T);
+
+    var extension_type = T.extension_type;
+    if (T.channel_bit_set) extension_type |= CHANNEL_BIT_MASK;
+
+    try writer.writeIntLittle(u16, extension_type);
+    try writer.writeIntLittle(u8, @enumToInt(T.message_type));
+    try writer.writeIntLittle(u24, msg.msg_len());
+    try msg.write(writer);
+}
