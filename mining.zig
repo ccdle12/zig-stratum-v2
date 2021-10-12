@@ -13,13 +13,6 @@ const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const U256 = types.U256;
 
-const Error = error{
-    InvalidMessageType,
-    InvalidMessageLength,
-    ExpectedChannelBitSet,
-    ExpectedChannelBitUnset,
-};
-
 /// Flags indicating optional protocol features supported by both the client
 /// and server.
 pub const MiningFlags = enum(u32) {
