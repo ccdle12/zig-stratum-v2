@@ -1,4 +1,5 @@
 const std = @import("std");
+const codec = @import("codec.zig");
 const common = @import("common.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
@@ -7,12 +8,12 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
-const CHANNEL_BIT_MASK = common.CHANNEL_BIT_MASK;
-const EXTENSION_TYPE = common.EXTENSION_TYPE;
+const CHANNEL_BIT_MASK = codec.CHANNEL_BIT_MASK;
 const MessageType = types.MessageType;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const U256 = types.U256;
+const unframeNoAlloc = codec.unframeNoAlloc;
 
 const Error = error{
     InvalidMessageType,
@@ -47,6 +48,8 @@ pub const MiningFlags = enum(u32) {
 /// the Client to notify the server about specific changes to a channel.
 const UpdateChannel = struct {
     pub const message_type: MessageType = .UpdateChannel;
+    pub const channel_bit_set = true;
+    pub const extension_type = 0x0000;
 
     /// The unique identifier of the channel.
     channel_id: u32,
@@ -95,25 +98,14 @@ const UpdateChannel = struct {
 
     pub fn frame(self: UpdateChannel, buf: *std.ArrayList(u8)) !void {
         var writer = &buf.writer();
-        try writer.writeIntLittle(u16, EXTENSION_TYPE | CHANNEL_BIT_MASK);
+        try writer.writeIntLittle(u16, UpdateChannel.extension_type | CHANNEL_BIT_MASK);
         try writer.writeIntLittle(u8, @enumToInt(UpdateChannel.message_type));
         try writer.writeIntLittle(u24, self.msg_len());
         try self.write(writer);
     }
 
     pub fn unframe(reader: anytype) !UpdateChannel {
-        const extension_type = try reader.readIntNative(u16);
-        if (extension_type & CHANNEL_BIT_MASK == 0)
-            return error.ExpectedChannelBitSet;
-
-        const msg_type = try reader.readIntNative(u8);
-        if (@intToEnum(MessageType, msg_type) != UpdateChannel.message_type)
-            return error.InvalidMessageType;
-
-        const len = try reader.readIntNative(u24);
-        _ = len;
-
-        return read(reader);
+        return unframeNoAlloc(UpdateChannel, reader);
     }
 };
 
