@@ -74,7 +74,7 @@ pub fn SetupConnection(comptime T: type) type {
             return Self{
                 .min_version = min_version,
                 .max_version = max_version,
-                .flags = MiningFlags.serialize(flags),
+                .flags = T.serialize(flags),
                 .endpoint_host = try STR0_255.init(endpoint_host),
                 .endpoint_port = endpoint_port,
                 .vendor = try STR0_255.init(vendor),
