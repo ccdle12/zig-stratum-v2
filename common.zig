@@ -259,6 +259,45 @@ pub fn SetupConnectionError(comptime T: type) type {
     };
 }
 
+pub const ChannelEndpointChanged = struct {
+    pub const message_type: MessageType = .ChannelEndpointChanged;
+    pub const channel_bit_set = true;
+    pub const extension_type: u16 = 0x0000;
+
+    const Self = @This();
+
+    channel_id: u32,
+
+    pub fn init(channel_id: u32) Self {
+        return Self{
+            .channel_id = channel_id,
+        };
+    }
+
+    pub fn msg_len(self: Self) u24 {
+        _ = self;
+        return @sizeOf(u32);
+    }
+
+    pub fn write(self: Self, writer: anytype) !void {
+        try writer.writeIntLittle(u32, self.channel_id);
+    }
+
+    pub fn read(reader: anytype) !Self {
+        return Self{
+            .channel_id = try reader.readIntNative(u32),
+        };
+    }
+
+    pub fn frame(self: Self, writer: anytype) !void {
+        try codec.frame(Self, self, writer);
+    }
+
+    pub fn unframe(reader: anytype) !Self {
+        return codec.unframeNoAlloc(Self, reader);
+    }
+};
+
 test "SetupConnection message invariants" {
     check_message_invariants(SetupConnection(MiningFlags));
 }
@@ -436,4 +475,42 @@ test "SetupConnectionError frame" {
     defer after.deinit(testing.allocator);
 
     try expect(before.eql(after));
+}
+
+test "ChannelEndpointChanged invariants" {
+    check_message_invariants(ChannelEndpointChanged);
+}
+
+test "ChannelEndpointChanged serialize" {
+    const before = ChannelEndpointChanged.init(2);
+    const expected = [_]u8{
+        0x02, 0x00, 0x00, 0x00, // channel_id
+    };
+
+    const after = try serdeTestNoAlloc(
+        ChannelEndpointChanged,
+        before,
+        expected.len,
+        expected,
+    );
+
+    try testing.expectEqual(before, after);
+}
+
+test "ChannelEndpointChanged frame" {
+    const before = ChannelEndpointChanged.init(2);
+    const expected = [_]u8{
+        0x00, 0x80, // extenstion type & channel bit (MSB=1)
+        0x03, // message_type
+        0x04, 0x00, 0x00, // message_length
+    };
+
+    const after = try frameTestNoAlloc(
+        ChannelEndpointChanged,
+        before,
+        expected.len,
+        expected,
+    );
+
+    try testing.expectEqual(before, after);
 }
