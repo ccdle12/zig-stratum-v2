@@ -13,44 +13,42 @@ const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const U256 = types.U256;
 
-/// Flags indicating optional protocol features supported by both the client
-/// and server.
 pub const MiningFlags = enum(u32) {
     RequiresStandardJobs = 1 << 0,
     RequiresWorkSelection = 1 << 1,
     RequiresVersionRolling = 1 << 2,
 
-    pub fn serialize(flags: []const MiningFlags) u32 {
-        var f: u32 = 0;
-        for (flags) |flag| f |= @enumToInt(flag);
-        return f;
-    }
-
-    pub fn contains(flags: u32, flag: MiningFlags) bool {
-        return flags & @enumToInt(flag) != 0;
-    }
+    pub usingnamespace FlagMixin(MiningFlags);
 };
 
-/// UpdateChannel is sent from the Client to a Server. This message is used by
-/// the Client to notify the server about specific changes to a channel.
+pub const MiningFlagsSuccess = enum(u32) {
+    RequiresFixedVersion = 1 << 0,
+    RequiresExtendedChannels = 1 << 1,
+
+    pub usingnamespace FlagMixin(MiningFlagsSuccess);
+};
+
+fn FlagMixin(comptime T: type) type {
+    return struct {
+        pub fn serialize(flags: []const T) u32 {
+            var f: u32 = 0;
+            for (flags) |flag| f |= @enumToInt(flag);
+            return f;
+        }
+
+        pub fn contains(flags: u32, flag: T) bool {
+            return flags & @enumToInt(flag) != 0;
+        }
+    };
+}
+
 const UpdateChannel = struct {
     pub const message_type: MessageType = .UpdateChannel;
     pub const channel_bit_set = true;
     pub const extension_type: u16 = 0x0000;
 
-    /// The unique identifier of the channel.
     channel_id: u32,
-
-    /// The expected [h/s] (hash rate/per second) of the device or the
-    /// cumulative rate on the channel if multiple devices are connected
-    /// downstream. Proxies MUST send 0.0f when there are no mining devices
-    /// connected yet.
     nominal_hash_rate: f32,
-
-    /// The Max Target that can be accepted by the connected device or
-    /// multiple devices downstream. In this case, if the max_target of
-    /// the channel is smaller than the current max target, the Server MUST
-    /// respond with a SetTarget message.
     max_target: U256,
 
     pub fn init(channel_id: u32, nominal_hash_rate: f32, max_target: U256) UpdateChannel {
@@ -150,7 +148,7 @@ test "UpdateChannel message invariants" {
     check_message_invariants(UpdateChannel);
 }
 
-test "UpdateChannel serialized" {
+test "UpdateChannel serialize" {
     var before = UpdateChannel.init(1, 12.5, [_]u8{0} ** 32);
     const expected = [_]u8{
         0x01, 0x00, 0x00, 0x00, // channel_id
