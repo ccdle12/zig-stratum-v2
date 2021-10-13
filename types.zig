@@ -68,6 +68,10 @@ pub const STR0_255 = struct {
     pub fn deinit(self: STR0_255, gpa: *mem.Allocator) void {
         gpa.free(self.value);
     }
+
+    pub fn eql(self: STR0_255, other: STR0_255) bool {
+        return mem.eql(u8, self.value, other.value);
+    }
 };
 
 test "STR0_255 init" {

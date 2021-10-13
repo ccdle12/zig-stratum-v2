@@ -137,11 +137,11 @@ pub fn SetupConnection(comptime T: type) type {
             if (self.min_version != other.min_version) return false;
             if (self.max_version != other.max_version) return false;
             if (self.flags != other.flags) return false;
-            if (!mem.eql(u8, self.endpoint_host.value, other.endpoint_host.value)) return false;
+            if (!self.endpoint_host.eql(other.endpoint_host)) return false;
             if (self.endpoint_port != other.endpoint_port) return false;
-            if (!mem.eql(u8, self.vendor.value, other.vendor.value)) return false;
-            if (!mem.eql(u8, self.firmware.value, other.firmware.value)) return false;
-            if (!mem.eql(u8, self.device_id.value, other.device_id.value)) return false;
+            if (!self.vendor.eql(other.vendor)) return false;
+            if (!self.firmware.eql(other.firmware)) return false;
+            if (!self.device_id.eql(other.device_id)) return false;
             return true;
         }
     };
