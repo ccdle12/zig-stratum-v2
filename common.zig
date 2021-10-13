@@ -1,5 +1,6 @@
 const std = @import("std");
 const codec = @import("codec.zig");
+const mining = @import("mining.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
 
@@ -9,19 +10,14 @@ const mem = std.mem;
 
 const check_message_invariants = types.check_message_invariants;
 const serdeTestAlloc = test_util.serdeTestAlloc;
+const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
+const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const STR0_255 = types.STR0_255;
-const MiningFlags = @import("mining.zig").MiningFlags;
+const MiningFlags = mining.MiningFlags;
+const MiningFlagsSuccess = mining.MiningFlagsSuccess;
 const MessageType = types.MessageType;
 
-/// Initiates the connection. This MUST be the first message sent by the client
-/// on the newly opened connection. Server MUST respond with either a
-/// SetupConnection.Success or SetupConnection.Error message. Clients that are 
-/// not configured to provide telemetry data to the upstream node SHOULD set 
-/// device_id to 0-length strings. However, they MUST always set vendor to a 
-/// string describing the manufacturer/developer and firmware version and 
-/// SHOULD always set hardware_version to a string describing, at least, the 
-/// particular hardware/software package in use.
 pub fn SetupConnection(comptime T: type) type {
     return struct {
         pub const message_type: MessageType = .SetupConnection;
@@ -151,11 +147,123 @@ pub fn SetupConnection(comptime T: type) type {
     };
 }
 
+pub fn SetupConnectionSuccess(comptime T: type) type {
+    return struct {
+        pub const message_type: MessageType = .SetupConnectionSuccess;
+        pub const channel_bit_set = false;
+        pub const extension_type: u16 = 0x0000;
+
+        const Self = @This();
+
+        used_version: u16,
+        flags: u32,
+
+        pub fn init(used_version: u16, flags: []const T) Self {
+            return Self{
+                .used_version = used_version,
+                .flags = T.serialize(flags),
+            };
+        }
+
+        pub fn msg_len(self: Self) u24 {
+            _ = self;
+            return @sizeOf(u16) + @sizeOf(u32);
+        }
+
+        pub fn write(self: Self, writer: anytype) !void {
+            try writer.writeIntLittle(u16, self.used_version);
+            try writer.writeIntLittle(u32, self.flags);
+        }
+
+        pub fn read(reader: anytype) !Self {
+            return Self{
+                .used_version = try reader.readIntNative(u16),
+                .flags = try reader.readIntNative(u32),
+            };
+        }
+        pub fn frame(self: Self, writer: anytype) !void {
+            try codec.frame(Self, self, writer);
+        }
+
+        pub fn unframe(reader: anytype) !Self {
+            return codec.unframeNoAlloc(Self, reader);
+        }
+    };
+}
+
+pub const SetupConnectionErrorCode = enum {
+    UnsupportedFeatureFlags,
+    UnsupportedProtocol,
+    ProtocolVersionMismatch,
+
+    pub fn to_string(error_code: SetupConnectionErrorCode) []const u8 {
+        return switch (error_code) {
+            .UnsupportedFeatureFlags => "unsupported-feature-flags",
+            .UnsupportedProtocol => "unsupported-protocol",
+            .ProtocolVersionMismatch => "protocol-version-mismatch",
+        };
+    }
+};
+
+pub fn SetupConnectionError(comptime T: type) type {
+    return struct {
+        pub const message_type: MessageType = .SetupConnectionError;
+        pub const channel_bit_set = false;
+        pub const extension_type: u16 = 0x0000;
+
+        const Self = @This();
+
+        flags: u32,
+        error_code: STR0_255,
+
+        pub fn init(flags: []const T, error_code: SetupConnectionErrorCode) !Self {
+            return Self{
+                .flags = T.serialize(flags),
+                .error_code = try STR0_255.init(error_code.to_string()),
+            };
+        }
+
+        pub fn msg_len(self: Self) u24 {
+            return @sizeOf(u32) + self.error_code.type_len();
+        }
+
+        pub fn write(self: Self, writer: anytype) !void {
+            try writer.writeIntLittle(u32, self.flags);
+            try self.error_code.write(writer);
+        }
+
+        pub fn read(gpa: *mem.Allocator, reader: anytype) !Self {
+            return Self{
+                .flags = try reader.readIntNative(u32),
+                .error_code = try STR0_255.read(gpa, reader),
+            };
+        }
+
+        pub fn deinit(self: Self, gpa: *mem.Allocator) void {
+            self.error_code.deinit(gpa);
+        }
+
+        pub fn frame(self: Self, writer: anytype) !void {
+            try codec.frame(Self, self, writer);
+        }
+
+        pub fn unframe(gpa: *mem.Allocator, reader: anytype) !Self {
+            return codec.unframeAlloc(Self, gpa, reader);
+        }
+
+        pub fn eql(self: Self, other: Self) bool {
+            if (self.flags != other.flags) return false;
+            if (!mem.eql(u8, self.error_code.value, other.error_code.value)) return false;
+            return true;
+        }
+    };
+}
+
 test "SetupConnection message invariants" {
     check_message_invariants(SetupConnection(MiningFlags));
 }
 
-test "SetupConnection Mining serialized" {
+test "SetupConnection Mining serialize" {
     const flags = [_]MiningFlags{ .RequiresWorkSelection, .RequiresVersionRolling };
     const before = try SetupConnection(MiningFlags).init(
         2,
@@ -220,6 +328,106 @@ test "SetupConnection Mining frame" {
 
     const after = try frameTestAlloc(
         SetupConnection(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
+    defer after.deinit(testing.allocator);
+
+    try expect(before.eql(after));
+}
+
+test "SetupConnectionSuccess invariants" {
+    check_message_invariants(SetupConnectionSuccess(MiningFlags));
+}
+
+test "SetupConnectionSuccess serialize" {
+    const flags = [_]MiningFlagsSuccess{ .RequiresFixedVersion, .RequiresExtendedChannels };
+    const before = SetupConnectionSuccess(MiningFlagsSuccess).init(2, flags[0..]);
+
+    const expected = [_]u8{
+        0x02, 0x00, // used_version
+        0x03, 0x00, 0x00, 0x00, // flags
+    };
+
+    const after = try serdeTestNoAlloc(
+        SetupConnectionSuccess(MiningFlagsSuccess),
+        before,
+        expected.len,
+        expected,
+    );
+
+    try testing.expectEqual(before, after);
+}
+
+test "SetupConnectionSuccess frame" {
+    const flags = [_]MiningFlagsSuccess{
+        .RequiresFixedVersion,
+        .RequiresExtendedChannels,
+    };
+    const before = SetupConnectionSuccess(MiningFlagsSuccess).init(2, flags[0..]);
+
+    const expected = [_]u8{
+        0x00, 0x00, // extenstion type & channel bit (MSB=0)
+        0x01, // message_type
+        0x06, 0x00, 0x00, // message_length
+    };
+
+    const after = try frameTestNoAlloc(
+        SetupConnectionSuccess(MiningFlagsSuccess),
+        before,
+        expected.len,
+        expected,
+    );
+
+    try testing.expectEqual(before, after);
+}
+
+test "SetupConnectionError invariants" {
+    check_message_invariants(SetupConnectionError(MiningFlags));
+}
+
+test "SetupConnectionError serialize" {
+    const flags = [_]MiningFlags{.RequiresStandardJobs};
+    const before = try SetupConnectionError(MiningFlags).init(
+        flags[0..],
+        SetupConnectionErrorCode.UnsupportedProtocol,
+    );
+
+    const expected = [_]u8{
+        0x01, 0x00, 0x00, 0x00, // flags
+        0x14, 0x75, 0x6e, 0x73, 0x75, 0x70, 0x70, 0x6f, 0x72, 0x74, 0x65, 0x64, // error_code
+        0x2d, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x63, 0x6f, 0x6c,
+    };
+
+    const after = try serdeTestAlloc(
+        SetupConnectionError(MiningFlags),
+        testing.allocator,
+        before,
+        expected.len,
+        expected,
+    );
+    defer after.deinit(testing.allocator);
+
+    try expect(before.eql(after));
+}
+
+test "SetupConnectionError frame" {
+    const flags = [_]MiningFlags{.RequiresStandardJobs};
+    const before = try SetupConnectionError(MiningFlags).init(
+        flags[0..],
+        SetupConnectionErrorCode.UnsupportedProtocol,
+    );
+
+    const expected = [_]u8{
+        0x00, 0x00, // extenstion type & channel bit (MSB=0)
+        0x02, // message_type
+        0x19, 0x00, 0x00, // message_length
+    };
+
+    const after = try frameTestAlloc(
+        SetupConnectionError(MiningFlags),
         testing.allocator,
         before,
         expected.len,
