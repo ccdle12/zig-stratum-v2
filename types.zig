@@ -31,6 +31,8 @@ pub fn check_message_invariants(comptime T: type) void {
 /// MessageType contains all the byte codes for each StratumV2 message.
 pub const MessageType = enum(u8) {
     SetupConnection = 0x00,
+    SetupConnectionSuccess = 0x01,
+    SetupConnectionError = 0x02,
     UpdateChannel = 0x16,
 };
 
