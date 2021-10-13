@@ -11,6 +11,13 @@ const MessageType = types.MessageType;
 /// type has a channel_id in its message frame.
 pub const CHANNEL_BIT_MASK = 0x8000;
 
+const Error = error{
+    InvalidMessageType,
+    InvalidMessageLength,
+    ExpectedChannelBitSet,
+    ExpectedChannelBitUnset,
+};
+
 pub fn unframeNoAlloc(
     comptime T: type,
     reader: anytype,

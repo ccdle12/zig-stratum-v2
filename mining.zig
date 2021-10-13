@@ -13,13 +13,6 @@ const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
 const U256 = types.U256;
 
-const Error = error{
-    InvalidMessageType,
-    InvalidMessageLength,
-    ExpectedChannelBitSet,
-    ExpectedChannelBitUnset,
-};
-
 pub const MiningFlags = enum(u32) {
     RequiresStandardJobs = 1 << 0,
     RequiresWorkSelection = 1 << 1,
