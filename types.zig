@@ -33,6 +33,7 @@ pub const MessageType = enum(u8) {
     SetupConnection = 0x00,
     SetupConnectionSuccess = 0x01,
     SetupConnectionError = 0x02,
+    ChannelEndpointChanged = 0x03,
     UpdateChannel = 0x16,
 };
 
