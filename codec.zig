@@ -1,5 +1,5 @@
 const std = @import("std");
-const types = @import("types.zig");
+const types = @import("./messages/types.zig");
 
 const assert = std.debug.assert;
 const mem = std.mem;

@@ -1,5 +1,5 @@
 const std = @import("std");
-const codec = @import("codec.zig");
+const codec = @import("../codec.zig");
 const types = @import("types.zig");
 const test_util = @import("test_util.zig");
 
