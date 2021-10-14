@@ -14,9 +14,7 @@ jobs:
       - uses: goto-bus-stop/setup-zig@v1
         with:
           version: master
-      - run: zig test common.zig
-      - run: zig test mining.zig
-      - run: zig test types.zig
+      - run: ./ci/test.sh
 
   lint:
     runs-on: ubuntu-latest
