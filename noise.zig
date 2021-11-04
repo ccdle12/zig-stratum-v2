@@ -5,9 +5,12 @@ const testing = std.testing;
 const mem = std.mem;
 const expect = testing.expect;
 const Ed25519 = crypto.sign.Ed25519;
+const Hmac = std.crypto.auth.hmac.Hmac;
 const X25519 = crypto.dh.X25519;
 const Blake2s256 = crypto.hash.blake2.Blake2s256;
 const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
+
+const blake_hmac = Hmac(Blake2s256);
 
 pub const hash_len = 32;
 pub const key_len = 32;
@@ -453,41 +456,11 @@ fn nonce_to_bytes(nonce: u64) [12]u8 {
     return [_]u8{ 0, 0, 0, 0, b0, b1, b2, b3, b4, b5, b6, b7 };
 }
 
-const libhmac = std.crypto.auth.hmac.Hmac;
-const h_mac = libhmac(Blake2s256);
-
-fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
-    var h = h_mac.init(key);
+inline fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
+    var h = blake_hmac.init(key);
     h.update(data);
     h.final(out);
 }
-
-// fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
-// var h = Blake2s256.init(.{});
-
-// var ipad = [_]u8{0x36} ** block_len;
-// var opad = [_]u8{0x5c} ** block_len;
-
-// for (key) |k, i| {
-//     ipad[i] ^= k;
-//     opad[i] ^= k;
-// }
-
-// h.update(&ipad);
-// h.update(data);
-
-// var inner_output: [hash_len]u8 = undefined;
-// h.final(&inner_output);
-
-// h = Blake2s256.init(.{});
-// h.update(&opad);
-// h.update(&inner_output);
-
-// h.final(out);
-// }
-
-// const libhkdf = std.crypto.kdf.hkdf.Hkdf;
-// const hk_df = libhkdf(h_mac);
 
 pub fn hkdf(
     chaining_key: *const [hash_len]u8,
