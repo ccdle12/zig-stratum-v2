@@ -444,16 +444,9 @@ fn decrypt(
 }
 
 fn nonce_to_bytes(nonce: u64) [12]u8 {
-    const b7: u8 = @intCast(u8, ((nonce >> 56) & 0xff));
-    const b6: u8 = @intCast(u8, ((nonce >> 48) & 0xff));
-    const b5: u8 = @intCast(u8, ((nonce >> 40) & 0xff));
-    const b4: u8 = @intCast(u8, ((nonce >> 32) & 0xff));
-    const b3: u8 = @intCast(u8, ((nonce >> 24) & 0xff));
-    const b2: u8 = @intCast(u8, ((nonce >> 16) & 0xff));
-    const b1: u8 = @intCast(u8, ((nonce >> 8) & 0xff));
-    const b0: u8 = @intCast(u8, ((nonce >> 0) & 0xff));
-
-    return [_]u8{ 0, 0, 0, 0, b0, b1, b2, b3, b4, b5, b6, b7 };
+    var buffer = [_]u8{0} ** 12;
+    mem.writeIntLittle(u64, &buffer[4..][0..8].*, nonce);
+    return buffer;
 }
 
 inline fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
