@@ -1,30 +1,30 @@
 const std = @import("std");
 const crypto = std.crypto;
-const mem = std.mem;
 const testing = std.testing;
-const expect = testing.expect;
 
+const mem = std.mem;
+const expect = testing.expect;
 const Ed25519 = crypto.sign.Ed25519;
 const X25519 = crypto.dh.X25519;
 const Blake2s256 = crypto.hash.blake2.Blake2s256;
 const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
 
-pub const HASH_LEN = 32;
-pub const KEY_LEN = 32;
-pub const BLOCK_LEN = 64;
-pub const MAC_LEN = 16;
-pub const MAX_MESSAGE = 65535;
+pub const hash_len = 32;
+pub const key_len = 32;
+pub const block_len = 64;
+pub const mac_len = 16;
+pub const max_msg_len = 65535;
 
-pub const EMPTY_KEY = [_]u8{0} ** 32;
-pub const EMPTY_HASH = [_]u8{0} ** 32;
+pub const empty_key = [_]u8{0} ** 32;
+pub const empty_hash = [_]u8{0} ** 32;
 
 const Error = error{
-    InvalidMsgLen,
+    EndOfBuffer,
 };
 
 pub const NoiseSession = struct {
     hs: HandshakeState,
-    h: [HASH_LEN]u8,
+    h: [hash_len]u8,
     cs1: CipherState,
     cs2: CipherState,
     mc: u128,
@@ -33,8 +33,8 @@ pub const NoiseSession = struct {
 
     pub fn init_initiator(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
         return .{
-            .hs = HandshakeState.init(true, prologue, s, EMPTY_KEY),
-            .h = EMPTY_HASH,
+            .hs = HandshakeState.init(true, prologue, s, empty_key),
+            .h = empty_hash,
             .cs1 = CipherState.init(),
             .cs2 = CipherState.init(),
             .mc = 0,
@@ -45,8 +45,8 @@ pub const NoiseSession = struct {
 
     pub fn init_responder(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
         return .{
-            .hs = HandshakeState.init(false, prologue, s, EMPTY_KEY),
-            .h = EMPTY_HASH,
+            .hs = HandshakeState.init(false, prologue, s, empty_key),
+            .h = empty_hash,
             .cs1 = CipherState.init(),
             .cs2 = CipherState.init(),
             .mc = 0,
@@ -56,8 +56,8 @@ pub const NoiseSession = struct {
     }
 
     pub fn send_msg(self: *NoiseSession, msg: []u8) !void {
-        if (msg.len < MAC_LEN or msg.len > MAX_MESSAGE)
-            return error.InvalidMsgLen;
+        if (msg.len < mac_len or msg.len > max_msg_len)
+            return error.EndOfBuffer;
 
         if (self.mc == 0) {
             try self.hs.write_msg_a(msg);
@@ -78,8 +78,8 @@ pub const NoiseSession = struct {
     }
 
     pub fn read_msg(self: *NoiseSession, msg: []u8) !void {
-        if (msg.len < MAC_LEN or msg.len > MAX_MESSAGE)
-            return error.InvalidMsgLen;
+        if (msg.len < mac_len or msg.len > max_msg_len)
+            return error.EndOfBuffer;
 
         if (self.mc == 0) {
             try self.hs.read_msg_a(msg);
@@ -110,29 +110,29 @@ pub const HandshakeState = struct {
     e: ?Ed25519.KeyPair,
 
     /// The remote parties static public key
-    rs: [KEY_LEN]u8,
+    rs: [key_len]u8,
 
     /// The remote parties ephemeral public key
-    re: [KEY_LEN]u8,
+    re: [key_len]u8,
 
     /// Indicates the initiator or responder role.
     initiator: bool,
 
     /// Pre-shared Secret Key.
-    psk: [KEY_LEN]u8,
+    psk: [key_len]u8,
 
     pub fn clear(self: *HandshakeState) void {
         self.s = null;
         self.e = null;
-        self.re = EMPTY_KEY;
-        self.psk = EMPTY_KEY;
+        self.re = empty_key;
+        self.psk = empty_key;
     }
 
     pub fn init(
         initiator: bool,
         prologue: []const u8,
         s: Ed25519.KeyPair,
-        psk: [KEY_LEN]u8,
+        psk: [key_len]u8,
     ) HandshakeState {
         const protocol_name = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
         var ss = SymmetricState.initialize_symmetric(protocol_name);
@@ -142,43 +142,43 @@ pub const HandshakeState = struct {
             .ss = ss,
             .s = s,
             .e = null,
-            .rs = EMPTY_KEY,
-            .re = EMPTY_KEY,
+            .rs = empty_key,
+            .re = empty_key,
             .initiator = initiator,
             .psk = psk,
         };
     }
 
     pub fn write_msg_a(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < KEY_LEN) return error.InvalidMsgLen;
+        if (msg.len < key_len) return error.EndOfBuffer;
         if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
 
-        var ne = msg[0..KEY_LEN];
+        var ne = msg[0..key_len];
         mem.copy(u8, ne, &self.e.?.public_key);
         self.ss.mix_hash(ne);
 
-        self.ss.mix_hash(msg[KEY_LEN..]);
+        self.ss.mix_hash(msg[key_len..]);
     }
 
     pub const CipherStateResult = struct {
-        hash: [HASH_LEN]u8,
+        hash: [hash_len]u8,
         cs1: CipherState,
         cs2: CipherState,
     };
 
     pub fn write_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
-        if (msg.len < KEY_LEN) return error.InvalidMsgLen;
+        if (msg.len < key_len) return error.EndOfBuffer;
         if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
 
-        var ne = msg[0..KEY_LEN];
-        var in_out = msg[KEY_LEN..];
+        var ne = msg[0..key_len];
+        var in_out = msg[key_len..];
         mem.copy(u8, ne, &self.e.?.public_key);
         self.ss.mix_hash(ne);
 
         self.ss.mix_key(&try dh(self.e.?, self.re));
 
-        var ns = in_out[0 .. KEY_LEN + MAC_LEN];
-        var in_out_2 = in_out[KEY_LEN + MAC_LEN ..];
+        var ns = in_out[0 .. key_len + mac_len];
+        var in_out_2 = in_out[key_len + mac_len ..];
         mem.copy(u8, ns, &self.s.?.public_key);
         try self.ss.encrypt_and_hash(ns);
 
@@ -196,20 +196,20 @@ pub const HandshakeState = struct {
     }
 
     pub fn read_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
-        if (msg.len < MAC_LEN + KEY_LEN) return error.InvalidMsgLen;
+        if (msg.len < mac_len + key_len) return error.EndOfBuffer;
 
-        var re = msg[0..KEY_LEN];
-        var in_out = msg[KEY_LEN..];
+        var re = msg[0..key_len];
+        var in_out = msg[key_len..];
         mem.copy(u8, &self.re, re);
         self.ss.mix_hash(&self.re);
 
         self.ss.mix_key(&try dh(self.e.?, self.re));
 
-        var rs = in_out[0 .. KEY_LEN + MAC_LEN];
-        var in_out_2 = in_out[KEY_LEN + MAC_LEN ..];
+        var rs = in_out[0 .. key_len + mac_len];
+        var in_out_2 = in_out[key_len + mac_len ..];
         try self.ss.decrypt_and_hash(rs);
 
-        mem.copy(u8, &self.rs, rs[0..KEY_LEN]);
+        mem.copy(u8, &self.rs, rs[0..key_len]);
         self.ss.mix_key(&try dh(self.e.?, self.rs));
 
         try self.ss.decrypt_and_hash(in_out_2);
@@ -224,17 +224,17 @@ pub const HandshakeState = struct {
         };
     }
 
-    fn dh(secret_keypair: Ed25519.KeyPair, key: [KEY_LEN]u8) ![KEY_LEN]u8 {
+    fn dh(secret_keypair: Ed25519.KeyPair, key: [key_len]u8) ![key_len]u8 {
         const s = try X25519.KeyPair.fromEd25519(secret_keypair);
         const p = try X25519.publicKeyFromEd25519(key);
         return try X25519.scalarmult(s.secret_key, p);
     }
 
     pub fn read_msg_a(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < KEY_LEN + MAC_LEN) return error.InvalidMsgLen;
-        mem.copy(u8, &self.re, msg[0..KEY_LEN]);
+        if (msg.len < key_len + mac_len) return error.EndOfBuffer;
+        mem.copy(u8, &self.re, msg[0..key_len]);
         self.ss.mix_hash(&self.re);
-        self.ss.mix_hash(msg[KEY_LEN..]);
+        self.ss.mix_hash(msg[key_len..]);
     }
 };
 
@@ -245,17 +245,17 @@ pub const SymmetricState = struct {
     cs: CipherState,
 
     // The Chaining Key of the cipher state.
-    ck: [KEY_LEN]u8,
-    h: [HASH_LEN]u8,
+    ck: [key_len]u8,
+    h: [hash_len]u8,
 
     pub fn initialize_symmetric(protocol_name: []const u8) SymmetricState {
-        var hash: [HASH_LEN]u8 = undefined;
+        var hash: [hash_len]u8 = undefined;
 
         var h = Blake2s256.init(.{});
         h.update(protocol_name);
         h.final(&hash);
 
-        var ck: [KEY_LEN]u8 = undefined;
+        var ck: [key_len]u8 = undefined;
         mem.copy(u8, &ck, &hash);
 
         return .{
@@ -266,7 +266,7 @@ pub const SymmetricState = struct {
     }
 
     pub fn mix_hash(self: *SymmetricState, data: []const u8) void {
-        var hash: [HASH_LEN]u8 = undefined;
+        var hash: [hash_len]u8 = undefined;
 
         var h = Blake2s256.init(.{});
         h.update(&self.h);
@@ -277,9 +277,9 @@ pub const SymmetricState = struct {
     }
 
     pub fn mix_key(self: *SymmetricState, input_key_material: []u8) void {
-        var out0 = EMPTY_HASH;
-        var out1 = EMPTY_HASH;
-        var out2 = EMPTY_HASH;
+        var out0 = empty_hash;
+        var out1 = empty_hash;
+        var out2 = empty_hash;
 
         hkdf(
             &self.ck,
@@ -292,18 +292,18 @@ pub const SymmetricState = struct {
 
         self.ck = out0;
 
-        var tmp_k = EMPTY_KEY;
+        var tmp_k = empty_key;
         mem.copy(u8, &tmp_k, &out1);
 
         self.cs = CipherState.from_key(tmp_k);
     }
 
     pub fn encrypt_and_hash(self: *SymmetricState, msg: []u8) !void {
-        var tmp_mac = [_]u8{0} ** MAC_LEN;
+        var tmp_mac = [_]u8{0} ** mac_len;
 
         // TODO: Check for under/overflow bug
-        var plain_text = msg[0 .. msg.len - MAC_LEN];
-        var mac = msg[msg.len - MAC_LEN ..];
+        var plain_text = msg[0 .. msg.len - mac_len];
+        var mac = msg[msg.len - mac_len ..];
 
         self.cs.encrypt_with_ad(&self.h, plain_text, &tmp_mac);
 
@@ -315,9 +315,9 @@ pub const SymmetricState = struct {
         var tmp: [2048]u8 = undefined;
         mem.copy(u8, tmp[0..msg.len], msg);
 
-        var ciphertext = msg[0 .. msg.len - MAC_LEN];
-        var mac = msg[msg.len - MAC_LEN ..];
-        var tmp_mac: [MAC_LEN]u8 = undefined;
+        var ciphertext = msg[0 .. msg.len - mac_len];
+        var mac = msg[msg.len - mac_len ..];
+        var tmp_mac: [mac_len]u8 = undefined;
         mem.copy(u8, &tmp_mac, mac);
 
         try self.cs.decrypt_with_ad(&self.h, ciphertext, tmp_mac);
@@ -325,9 +325,9 @@ pub const SymmetricState = struct {
     }
 
     pub fn split(self: SymmetricState) [2]CipherState {
-        var tmp_k1 = EMPTY_HASH;
-        var tmp_k2 = EMPTY_HASH;
-        var out2 = EMPTY_HASH;
+        var tmp_k1 = empty_hash;
+        var tmp_k2 = empty_hash;
+        var out2 = empty_hash;
 
         hkdf(
             &self.ck,
@@ -345,8 +345,8 @@ pub const SymmetricState = struct {
     }
 
     pub fn clear(self: *SymmetricState) void {
-        self.cs.k = EMPTY_KEY;
-        self.ck = EMPTY_KEY;
+        self.cs.k = empty_key;
+        self.ck = empty_key;
     }
 };
 
@@ -355,19 +355,19 @@ pub const SymmetricState = struct {
 // and one for receiving.
 pub const CipherState = struct {
     // A cipher key of 32 bytes (which maybe empty).
-    k: [KEY_LEN]u8,
+    k: [key_len]u8,
 
     // An 8-byte unsigned integer nonce.
     n: u64,
 
     pub fn init() CipherState {
         return .{
-            .k = EMPTY_KEY,
+            .k = empty_key,
             .n = 0,
         };
     }
 
-    pub fn from_key(key: [KEY_LEN]u8) CipherState {
+    pub fn from_key(key: [key_len]u8) CipherState {
         return .{
             .k = key,
             .n = 0,
@@ -378,9 +378,9 @@ pub const CipherState = struct {
         self: *CipherState,
         ad: []const u8,
         msg: []u8,
-        mac: *[MAC_LEN]u8,
+        mac: *[mac_len]u8,
     ) void {
-        if (!mem.eql(u8, &self.k, &EMPTY_KEY)) {
+        if (!mem.eql(u8, &self.k, &empty_key)) {
             encrypt(msg, mac, ad, self.n, self.k);
             self.n += 1;
         }
@@ -390,18 +390,18 @@ pub const CipherState = struct {
         self: *CipherState,
         ad: []const u8,
         msg: []u8,
-        mac: [MAC_LEN]u8,
+        mac: [mac_len]u8,
     ) !void {
-        if (!mem.eql(u8, &self.k, &EMPTY_KEY)) {
+        if (!mem.eql(u8, &self.k, &empty_key)) {
             try decrypt(msg, mac, ad, self.n, self.k);
             self.n += 1;
         }
     }
 
     pub fn write_msg_regular(self: *CipherState, msg: []u8) void {
-        var in_out = msg[0 .. msg.len - MAC_LEN];
-        var mac = msg[msg.len - MAC_LEN ..];
-        var tmp_mac = [_]u8{0} ** MAC_LEN;
+        var in_out = msg[0 .. msg.len - mac_len];
+        var mac = msg[msg.len - mac_len ..];
+        var tmp_mac = [_]u8{0} ** mac_len;
 
         var zerolen = [0]u8{};
         self.encrypt_with_ad(&zerolen, in_out, &tmp_mac);
@@ -409,10 +409,10 @@ pub const CipherState = struct {
     }
 
     pub fn read_msg_regular(self: *CipherState, msg: []u8) !void {
-        var in_out = msg[0 .. msg.len - MAC_LEN];
-        var mac = msg[msg.len - MAC_LEN ..];
+        var in_out = msg[0 .. msg.len - mac_len];
+        var mac = msg[msg.len - mac_len ..];
 
-        var tmp_mac = [_]u8{0} ** MAC_LEN;
+        var tmp_mac = [_]u8{0} ** mac_len;
         mem.copy(u8, &tmp_mac, mac);
 
         var zerolen = [_]u8{};
@@ -422,20 +422,20 @@ pub const CipherState = struct {
 
 fn encrypt(
     output: []u8,
-    mac: *[MAC_LEN]u8,
+    mac: *[mac_len]u8,
     ad: []const u8,
     nonce: u64,
-    k: [KEY_LEN]u8,
+    k: [key_len]u8,
 ) void {
     ChaCha20Poly1305.encrypt(output, mac, output, ad, nonce_to_bytes(nonce), k);
 }
 
 fn decrypt(
     output: []u8,
-    mac: [MAC_LEN]u8,
+    mac: [mac_len]u8,
     ad: []const u8,
     nonce: u64,
-    k: [KEY_LEN]u8,
+    k: [key_len]u8,
 ) !void {
     try ChaCha20Poly1305.decrypt(output, output, mac, ad, nonce_to_bytes(nonce), k);
 }
@@ -453,53 +453,65 @@ fn nonce_to_bytes(nonce: u64) [12]u8 {
     return [_]u8{ 0, 0, 0, 0, b0, b1, b2, b3, b4, b5, b6, b7 };
 }
 
-fn hmac(key: *const [HASH_LEN]u8, data: []const u8, out: *[HASH_LEN]u8) void {
-    var h = Blake2s256.init(.{});
+const libhmac = std.crypto.auth.hmac.Hmac;
+const h_mac = libhmac(Blake2s256);
 
-    var ipad = [_]u8{0x36} ** BLOCK_LEN;
-    var opad = [_]u8{0x5c} ** BLOCK_LEN;
-
-    for (key) |k, i| {
-        ipad[i] ^= k;
-        opad[i] ^= k;
-    }
-
-    h.update(&ipad);
+fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
+    var h = h_mac.init(key);
     h.update(data);
-
-    var inner_output: [HASH_LEN]u8 = undefined;
-    h.final(&inner_output);
-
-    h = Blake2s256.init(.{});
-    h.update(&opad);
-    h.update(&inner_output);
-
     h.final(out);
 }
 
+// fn hmac(key: *const [hash_len]u8, data: []const u8, out: *[hash_len]u8) void {
+// var h = Blake2s256.init(.{});
+
+// var ipad = [_]u8{0x36} ** block_len;
+// var opad = [_]u8{0x5c} ** block_len;
+
+// for (key) |k, i| {
+//     ipad[i] ^= k;
+//     opad[i] ^= k;
+// }
+
+// h.update(&ipad);
+// h.update(data);
+
+// var inner_output: [hash_len]u8 = undefined;
+// h.final(&inner_output);
+
+// h = Blake2s256.init(.{});
+// h.update(&opad);
+// h.update(&inner_output);
+
+// h.final(out);
+// }
+
+// const libhkdf = std.crypto.kdf.hkdf.Hkdf;
+// const hk_df = libhkdf(h_mac);
+
 pub fn hkdf(
-    chaining_key: *const [HASH_LEN]u8,
+    chaining_key: *const [hash_len]u8,
     input_key_material: []const u8,
     outputs: usize,
-    out1: *[HASH_LEN]u8,
-    out2: *[HASH_LEN]u8,
-    out3: *[HASH_LEN]u8,
+    out1: *[hash_len]u8,
+    out2: *[hash_len]u8,
+    out3: *[hash_len]u8,
 ) void {
-    var tmp_key = EMPTY_KEY;
+    var tmp_key = empty_key;
     hmac(chaining_key, input_key_material, &tmp_key);
     hmac(&tmp_key, &[_]u8{1}, out1);
     if (outputs == 1) return;
 
-    var in2 = [_]u8{0} ** (HASH_LEN + 1);
+    var in2 = [_]u8{0} ** (hash_len + 1);
     mem.copy(u8, &in2, out1);
 
-    in2[HASH_LEN] = 2;
+    in2[hash_len] = 2;
     hmac(&tmp_key, &in2, out2);
     if (outputs == 2) return;
 
-    var in3 = [_]u8{0} ** (HASH_LEN + 1);
+    var in3 = [_]u8{0} ** (hash_len + 1);
     mem.copy(u8, &in3, out2);
-    in3[HASH_LEN] = 3;
+    in3[hash_len] = 3;
     hmac(&tmp_key, &in3, out3);
 }
 
@@ -554,7 +566,7 @@ test "HandshakeState initiator" {
     };
     const s = Ed25519.KeyPair.fromSecretKey(secret_key);
 
-    var handshake_state = HandshakeState.init(true, "", s, EMPTY_KEY);
+    var handshake_state = HandshakeState.init(true, "", s, empty_key);
     const expected_h = [_]u8{
         0xb3, 0xf9, 0xe9, 0x6b, 0x14, 0x94, 0xc2, 0xe5, 0x52, 0xae, 0x50, 0x97,
         0x70, 0x9c, 0x09, 0x5a, 0x37, 0x9e, 0xd4, 0xe0, 0xa1, 0x2f, 0x56, 0xf1,
@@ -596,9 +608,9 @@ test "nonce to bytes" {
 }
 
 test "hmac" {
-    var out = EMPTY_KEY;
-    var key = [_]u8{1} ** KEY_LEN;
-    var data = [_]u8{1} ** KEY_LEN;
+    var out = empty_key;
+    var key = [_]u8{1} ** key_len;
+    var data = [_]u8{1} ** key_len;
 
     hmac(&key, &data, &out);
 
@@ -618,10 +630,10 @@ test "hkdf" {
         0xFD, 0x9C, 0x71, 0x6B, 0xB9, 0x26, 0x21, 0x09,
     };
 
-    var input_key_material = [_]u8{1} ** KEY_LEN;
-    var out1 = EMPTY_HASH;
-    var out2 = EMPTY_HASH;
-    var out3 = EMPTY_HASH;
+    var input_key_material = [_]u8{1} ** key_len;
+    var out1 = empty_hash;
+    var out2 = empty_hash;
+    var out3 = empty_hash;
 
     hkdf(
         &chaining_key,
@@ -633,8 +645,8 @@ test "hkdf" {
     );
 
     const TestCase = struct {
-        in: [KEY_LEN]u8,
-        expected: [KEY_LEN]u8,
+        in: [key_len]u8,
+        expected: [key_len]u8,
     };
 
     const test_cases = [_]TestCase{
