@@ -21,6 +21,10 @@ pub const max_msg_len = 65535;
 pub const empty_key = [_]u8{0} ** 32;
 pub const empty_hash = [_]u8{0} ** 32;
 
+inline fn is_empty_key(key: [32]u8) bool {
+    return mem.eql(u8, &key, &empty_key);
+}
+
 const Error = error{
     EndOfBuffer,
 };
@@ -154,12 +158,11 @@ pub const HandshakeState = struct {
 
     pub fn write_msg_a(self: *HandshakeState, msg: []u8) !void {
         if (msg.len < key_len) return error.EndOfBuffer;
+
         if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
 
-        var ne = msg[0..key_len];
-        mem.copy(u8, ne, &self.e.?.public_key);
-        self.ss.mix_hash(ne);
-
+        mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
+        self.ss.mix_hash(msg[0..key_len]);
         self.ss.mix_hash(msg[key_len..]);
     }
 
@@ -173,20 +176,16 @@ pub const HandshakeState = struct {
         if (msg.len < key_len) return error.EndOfBuffer;
         if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
 
-        var ne = msg[0..key_len];
-        var in_out = msg[key_len..];
-        mem.copy(u8, ne, &self.e.?.public_key);
-        self.ss.mix_hash(ne);
-
+        mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
+        self.ss.mix_hash(msg[0..key_len]);
         self.ss.mix_key(&try dh(self.e.?, self.re));
 
-        var ns = in_out[0 .. key_len + mac_len];
-        var in_out_2 = in_out[key_len + mac_len ..];
+        var ns = msg[key_len .. (key_len * 2) + mac_len];
         mem.copy(u8, ns, &self.s.?.public_key);
         try self.ss.encrypt_and_hash(ns);
 
         self.ss.mix_key(&try dh(self.s.?, self.re));
-        try self.ss.encrypt_and_hash(in_out_2);
+        try self.ss.encrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
 
         const cs = self.ss.split();
         self.ss.clear();
@@ -201,21 +200,16 @@ pub const HandshakeState = struct {
     pub fn read_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
         if (msg.len < mac_len + key_len) return error.EndOfBuffer;
 
-        var re = msg[0..key_len];
-        var in_out = msg[key_len..];
-        mem.copy(u8, &self.re, re);
+        mem.copy(u8, &self.re, msg[0..key_len]);
         self.ss.mix_hash(&self.re);
-
         self.ss.mix_key(&try dh(self.e.?, self.re));
 
-        var rs = in_out[0 .. key_len + mac_len];
-        var in_out_2 = in_out[key_len + mac_len ..];
+        var rs = msg[key_len .. (key_len * 2) + mac_len];
         try self.ss.decrypt_and_hash(rs);
-
         mem.copy(u8, &self.rs, rs[0..key_len]);
         self.ss.mix_key(&try dh(self.e.?, self.rs));
 
-        try self.ss.decrypt_and_hash(in_out_2);
+        try self.ss.decrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
 
         const cs = self.ss.split();
         self.ss.clear();
@@ -295,56 +289,50 @@ pub const SymmetricState = struct {
 
         self.ck = out0;
 
-        var tmp_k = empty_key;
-        mem.copy(u8, &tmp_k, &out1);
+        var key = empty_key;
+        mem.copy(u8, &key, &out1);
 
-        self.cs = CipherState.from_key(tmp_k);
+        self.cs = CipherState.from_key(key);
     }
 
     pub fn encrypt_and_hash(self: *SymmetricState, msg: []u8) !void {
-        var tmp_mac = [_]u8{0} ** mac_len;
-
         // TODO: Check for under/overflow bug
-        var plain_text = msg[0 .. msg.len - mac_len];
-        var mac = msg[msg.len - mac_len ..];
+        var mac: [mac_len]u8 = undefined;
+        self.cs.encrypt_with_ad(&self.h, msg[0 .. msg.len - mac_len], &mac);
 
-        self.cs.encrypt_with_ad(&self.h, plain_text, &tmp_mac);
-
-        mem.copy(u8, mac, &tmp_mac);
+        mem.copy(u8, msg[msg.len - mac_len ..], &mac);
         self.mix_hash(msg);
     }
 
     pub fn decrypt_and_hash(self: *SymmetricState, msg: []u8) !void {
-        var tmp: [2048]u8 = undefined;
-        mem.copy(u8, tmp[0..msg.len], msg);
+        var cipher_text: [2048]u8 = undefined;
+        mem.copy(u8, cipher_text[0..msg.len], msg);
 
-        var ciphertext = msg[0 .. msg.len - mac_len];
-        var mac = msg[msg.len - mac_len ..];
-        var tmp_mac: [mac_len]u8 = undefined;
-        mem.copy(u8, &tmp_mac, mac);
+        var mac: [mac_len]u8 = undefined;
+        mem.copy(u8, &mac, msg[msg.len - mac_len ..]);
 
-        try self.cs.decrypt_with_ad(&self.h, ciphertext, tmp_mac);
-        self.mix_hash(tmp[0..msg.len]);
+        try self.cs.decrypt_with_ad(&self.h, msg[0 .. msg.len - mac_len], mac);
+        self.mix_hash(cipher_text[0..msg.len]);
     }
 
     pub fn split(self: SymmetricState) [2]CipherState {
-        var tmp_k1 = empty_hash;
-        var tmp_k2 = empty_hash;
+        var send_key = empty_key;
+        var recv_key = empty_key;
         var out2 = empty_hash;
 
         hkdf(
             &self.ck,
             &[0]u8{},
             2,
-            &tmp_k1,
-            &tmp_k2,
+            &send_key,
+            &recv_key,
             &out2,
         );
 
-        var cs1 = CipherState.from_key(tmp_k1);
-        var cs2 = CipherState.from_key(tmp_k2);
-
-        return [_]CipherState{ cs1, cs2 };
+        return .{
+            CipherState.from_key(send_key),
+            CipherState.from_key(recv_key),
+        };
     }
 
     pub fn clear(self: *SymmetricState) void {
@@ -383,7 +371,7 @@ pub const CipherState = struct {
         msg: []u8,
         mac: *[mac_len]u8,
     ) void {
-        if (!mem.eql(u8, &self.k, &empty_key)) {
+        if (!is_empty_key(self.k)) {
             encrypt(msg, mac, ad, self.n, self.k);
             self.n += 1;
         }
@@ -395,31 +383,22 @@ pub const CipherState = struct {
         msg: []u8,
         mac: [mac_len]u8,
     ) !void {
-        if (!mem.eql(u8, &self.k, &empty_key)) {
+        if (!is_empty_key(self.k)) {
             try decrypt(msg, mac, ad, self.n, self.k);
             self.n += 1;
         }
     }
 
     pub fn write_msg_regular(self: *CipherState, msg: []u8) void {
-        var in_out = msg[0 .. msg.len - mac_len];
-        var mac = msg[msg.len - mac_len ..];
-        var tmp_mac = [_]u8{0} ** mac_len;
-
-        var zerolen = [0]u8{};
-        self.encrypt_with_ad(&zerolen, in_out, &tmp_mac);
-        mem.copy(u8, mac, &tmp_mac);
+        var mac: [mac_len]u8 = undefined;
+        self.encrypt_with_ad(&[0]u8{}, msg[0 .. msg.len - mac_len], &mac);
+        mem.copy(u8, msg[msg.len - mac_len ..], &mac);
     }
 
     pub fn read_msg_regular(self: *CipherState, msg: []u8) !void {
-        var in_out = msg[0 .. msg.len - mac_len];
-        var mac = msg[msg.len - mac_len ..];
-
-        var tmp_mac = [_]u8{0} ** mac_len;
-        mem.copy(u8, &tmp_mac, mac);
-
-        var zerolen = [_]u8{};
-        try self.decrypt_with_ad(&zerolen, in_out, tmp_mac);
+        var mac: [mac_len]u8 = undefined;
+        mem.copy(u8, &mac, msg[msg.len - mac_len ..]);
+        try self.decrypt_with_ad(&[0]u8{}, msg[0 .. msg.len - mac_len], mac);
     }
 };
 
@@ -463,29 +442,29 @@ pub fn hkdf(
     out2: *[hash_len]u8,
     out3: *[hash_len]u8,
 ) void {
-    var tmp_key = empty_key;
-    hmac(chaining_key, input_key_material, &tmp_key);
-    hmac(&tmp_key, &[_]u8{1}, out1);
+    var key = empty_key;
+    hmac(chaining_key, input_key_material, &key);
+    hmac(&key, &[_]u8{1}, out1);
     if (outputs == 1) return;
 
-    var in2 = [_]u8{0} ** (hash_len + 1);
+    var in2: [hash_len + 1]u8 = undefined;
     mem.copy(u8, &in2, out1);
 
     in2[hash_len] = 2;
-    hmac(&tmp_key, &in2, out2);
+    hmac(&key, &in2, out2);
     if (outputs == 2) return;
 
-    var in3 = [_]u8{0} ** (hash_len + 1);
+    var in3: [hash_len + 1]u8 = undefined;
     mem.copy(u8, &in3, out2);
     in3[hash_len] = 3;
-    hmac(&tmp_key, &in3, out3);
+    hmac(&key, &in3, out3);
 }
 
 test "full handshake" {
     var responder = NoiseSession.init_responder("", try Ed25519.KeyPair.create(null));
     var initiator = NoiseSession.init_initiator("", try Ed25519.KeyPair.create(null));
 
-    var buf = [_]u8{0} ** 1024;
+    var buf: [1024]u8 = undefined;
 
     // -> e
     try initiator.send_msg(&buf);
@@ -502,7 +481,7 @@ test "full handshake" {
     try expect(responder.is_transport and initiator.is_transport);
     try expect(mem.eql(u8, &initiator.hs.ss.h, &responder.hs.ss.h));
 
-    var frame = [_]u8{0} ** 1024;
+    var frame: [1024]u8 = undefined;
     var msg = [_]u8{2} ** 200;
     mem.copy(u8, &frame, &msg);
 
