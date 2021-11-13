@@ -157,9 +157,11 @@ pub const HandshakeState = struct {
     }
 
     pub fn write_msg_a(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < key_len) return error.EndOfBuffer;
+        if (msg.len < key_len)
+            return error.EndOfBuffer;
 
-        if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
+        if (self.e == null)
+            self.e = try Ed25519.KeyPair.create(null);
 
         mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
         self.ss.mix_hash(msg[0..key_len]);
@@ -173,8 +175,11 @@ pub const HandshakeState = struct {
     };
 
     pub fn write_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
-        if (msg.len < key_len) return error.EndOfBuffer;
-        if (self.e == null) self.e = try Ed25519.KeyPair.create(null);
+        if (msg.len < key_len)
+            return error.EndOfBuffer;
+
+        if (self.e == null)
+            self.e = try Ed25519.KeyPair.create(null);
 
         mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
         self.ss.mix_hash(msg[0..key_len]);
@@ -198,7 +203,8 @@ pub const HandshakeState = struct {
     }
 
     pub fn read_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
-        if (msg.len < mac_len + key_len) return error.EndOfBuffer;
+        if (msg.len < mac_len + key_len)
+            return error.EndOfBuffer;
 
         mem.copy(u8, &self.re, msg[0..key_len]);
         self.ss.mix_hash(&self.re);
@@ -228,7 +234,9 @@ pub const HandshakeState = struct {
     }
 
     pub fn read_msg_a(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < key_len + mac_len) return error.EndOfBuffer;
+        if (msg.len < key_len + mac_len)
+            return error.EndOfBuffer;
+
         mem.copy(u8, &self.re, msg[0..key_len]);
         self.ss.mix_hash(&self.re);
         self.ss.mix_hash(msg[key_len..]);
