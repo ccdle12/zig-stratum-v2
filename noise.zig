@@ -30,35 +30,37 @@ const Error = error{
 };
 
 pub const NoiseSession = struct {
+    state: SessionState,
     hs: HandshakeState,
     h: [hash_len]u8,
     cs1: CipherState,
     cs2: CipherState,
     mc: u128,
-    i: bool,
-    is_transport: bool,
+    initiator: bool,
+
+    pub const SessionState = enum {
+        E,
+        ES,
+        T,
+    };
 
     pub fn init_initiator(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
-        return .{
-            .hs = HandshakeState.init(true, prologue, s, empty_key),
-            .h = empty_hash,
-            .cs1 = CipherState.init(),
-            .cs2 = CipherState.init(),
-            .mc = 0,
-            .i = true,
-            .is_transport = false,
-        };
+        return init(prologue, s, true);
     }
 
     pub fn init_responder(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
+        return init(prologue, s, false);
+    }
+
+    fn init(prologue: []const u8, s: Ed25519.KeyPair, initiator: bool) NoiseSession {
         return .{
-            .hs = HandshakeState.init(false, prologue, s, empty_key),
+            .state = .E,
+            .hs = HandshakeState.init(initiator, prologue, s, empty_key),
             .h = empty_hash,
             .cs1 = CipherState.init(),
             .cs2 = CipherState.init(),
             .mc = 0,
-            .i = false,
-            .is_transport = false,
+            .initiator = initiator,
         };
     }
 
@@ -66,21 +68,7 @@ pub const NoiseSession = struct {
         if (msg.len < mac_len or msg.len > max_msg_len)
             return error.EndOfBuffer;
 
-        if (self.mc == 0) {
-            try self.hs.write_msg_a(msg);
-        } else if (self.mc == 1) {
-            const tmp = try self.hs.write_msg_b(msg);
-            self.h = tmp.hash;
-            self.is_transport = true;
-            self.cs1 = tmp.cs1;
-            self.cs2 = tmp.cs2;
-            self.hs.clear();
-        } else if (self.i) {
-            self.cs1.write_msg_regular(msg);
-        } else {
-            self.cs2.write_msg_regular(msg);
-        }
-
+        try self.process_msg(msg, true);
         self.mc += 1;
     }
 
@@ -88,22 +76,49 @@ pub const NoiseSession = struct {
         if (msg.len < mac_len or msg.len > max_msg_len)
             return error.EndOfBuffer;
 
-        if (self.mc == 0) {
-            try self.hs.read_msg_a(msg);
-        } else if (self.mc == 1) {
-            const tmp = try self.hs.read_msg_b(msg);
-            self.h = tmp.hash;
-            self.is_transport = true;
-            self.cs1 = tmp.cs1;
-            self.cs2 = tmp.cs2;
-            self.hs.clear();
-        } else if (self.i) {
-            try self.cs2.read_msg_regular(msg);
-        } else {
-            try self.cs1.read_msg_regular(msg);
-        }
-
+        try self.process_msg(msg, false);
         self.mc += 1;
+    }
+
+    fn process_msg(self: *NoiseSession, msg: []u8, send: bool) !void {
+        switch (self.state) {
+            .E => {
+                switch (send) {
+                    true => try self.hs.write_msg_a(msg),
+                    false => try self.hs.read_msg_a(msg),
+                }
+                self.state = .ES;
+            },
+            .ES => {
+                const cipher_state = blk: {
+                    break :blk switch (send) {
+                        true => try self.hs.write_msg_b(msg),
+                        false => try self.hs.read_msg_b(msg),
+                    };
+                };
+                self.h = cipher_state.hash;
+                self.cs1 = cipher_state.cs1;
+                self.cs2 = cipher_state.cs2;
+                self.hs.clear();
+                self.state = .T;
+            },
+            .T => {
+                switch (send) {
+                    true => switch (self.initiator) {
+                        true => self.cs1.write_msg_regular(msg),
+                        false => self.cs2.write_msg_regular(msg),
+                    },
+                    false => switch (self.initiator) {
+                        true => try self.cs2.read_msg_regular(msg),
+                        false => try self.cs1.read_msg_regular(msg),
+                    },
+                }
+            },
+        }
+    }
+
+    pub fn is_transport(self: NoiseSession) bool {
+        return self.state == .T;
     }
 };
 
@@ -486,7 +501,7 @@ test "full handshake" {
     try initiator.read_msg(&buf);
 
     try expect(responder.mc == 2 and initiator.mc == 2);
-    try expect(responder.is_transport and initiator.is_transport);
+    try expect(responder.is_transport() and initiator.is_transport());
     try expect(mem.eql(u8, &initiator.hs.ss.h, &responder.hs.ss.h));
 
     var frame: [1024]u8 = undefined;
