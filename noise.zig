@@ -11,6 +11,8 @@ const Blake2s256 = crypto.hash.blake2.Blake2s256;
 const ChaCha20Poly1305 = crypto.aead.chacha_poly.ChaCha20Poly1305;
 
 const blake_hmac = Hmac(Blake2s256);
+const encrypt = ChaCha20Poly1305.encrypt;
+const decrypt = ChaCha20Poly1305.decrypt;
 
 pub const hash_len = 32;
 pub const key_len = 32;
@@ -84,16 +86,16 @@ pub const NoiseSession = struct {
         switch (self.state) {
             .E => {
                 switch (send) {
-                    true => try self.hs.write_msg_a(msg),
-                    false => try self.hs.read_msg_a(msg),
+                    true => try self.hs.write_msg_e(msg),
+                    else => try self.hs.read_msg_e(msg),
                 }
                 self.state = .ES;
             },
             .ES => {
                 const cipher_state = blk: {
                     break :blk switch (send) {
-                        true => try self.hs.write_msg_b(msg),
-                        false => try self.hs.read_msg_b(msg),
+                        true => try self.hs.write_msg_es(msg),
+                        else => try self.hs.read_msg_es(msg),
                     };
                 };
                 self.h = cipher_state.hash;
@@ -105,12 +107,12 @@ pub const NoiseSession = struct {
             .T => {
                 switch (send) {
                     true => switch (self.initiator) {
-                        true => self.cs1.write_msg_regular(msg),
-                        false => self.cs2.write_msg_regular(msg),
+                        true => self.cs1.write_msg_transport(msg),
+                        else => self.cs2.write_msg_transport(msg),
                     },
-                    false => switch (self.initiator) {
-                        true => try self.cs2.read_msg_regular(msg),
-                        false => try self.cs1.read_msg_regular(msg),
+                    else => switch (self.initiator) {
+                        true => try self.cs2.read_msg_transport(msg),
+                        else => try self.cs1.read_msg_transport(msg),
                     },
                 }
             },
@@ -171,7 +173,7 @@ pub const HandshakeState = struct {
         };
     }
 
-    pub fn write_msg_a(self: *HandshakeState, msg: []u8) !void {
+    pub fn write_msg_e(self: *HandshakeState, msg: []u8) !void {
         if (msg.len < key_len)
             return error.EndOfBuffer;
 
@@ -189,7 +191,7 @@ pub const HandshakeState = struct {
         cs2: CipherState,
     };
 
-    pub fn write_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
+    pub fn write_msg_es(self: *HandshakeState, msg: []u8) !CipherStateResult {
         if (msg.len < key_len)
             return error.EndOfBuffer;
 
@@ -217,7 +219,16 @@ pub const HandshakeState = struct {
         };
     }
 
-    pub fn read_msg_b(self: *HandshakeState, msg: []u8) !CipherStateResult {
+    pub fn read_msg_e(self: *HandshakeState, msg: []u8) !void {
+        if (msg.len < key_len + mac_len)
+            return error.EndOfBuffer;
+
+        mem.copy(u8, &self.re, msg[0..key_len]);
+        self.ss.mix_hash(&self.re);
+        self.ss.mix_hash(msg[key_len..]);
+    }
+
+    pub fn read_msg_es(self: *HandshakeState, msg: []u8) !CipherStateResult {
         if (msg.len < mac_len + key_len)
             return error.EndOfBuffer;
 
@@ -246,15 +257,6 @@ pub const HandshakeState = struct {
         const s = try X25519.KeyPair.fromEd25519(secret_keypair);
         const p = try X25519.publicKeyFromEd25519(key);
         return try X25519.scalarmult(s.secret_key, p);
-    }
-
-    pub fn read_msg_a(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < key_len + mac_len)
-            return error.EndOfBuffer;
-
-        mem.copy(u8, &self.re, msg[0..key_len]);
-        self.ss.mix_hash(&self.re);
-        self.ss.mix_hash(msg[key_len..]);
     }
 };
 
@@ -314,7 +316,6 @@ pub const SymmetricState = struct {
 
         var key = empty_key;
         mem.copy(u8, &key, &out1);
-
         self.cs = CipherState.from_key(key);
     }
 
@@ -395,7 +396,7 @@ pub const CipherState = struct {
         mac: *[mac_len]u8,
     ) void {
         if (!is_empty_key(self.k)) {
-            encrypt(msg, mac, ad, self.n, self.k);
+            encrypt(msg, mac, msg, ad, nonce_to_bytes(self.n), self.k);
             self.n += 1;
         }
     }
@@ -407,43 +408,23 @@ pub const CipherState = struct {
         mac: [mac_len]u8,
     ) !void {
         if (!is_empty_key(self.k)) {
-            try decrypt(msg, mac, ad, self.n, self.k);
+            try decrypt(msg, msg, mac, ad, nonce_to_bytes(self.n), self.k);
             self.n += 1;
         }
     }
 
-    pub fn write_msg_regular(self: *CipherState, msg: []u8) void {
+    pub fn write_msg_transport(self: *CipherState, msg: []u8) void {
         var mac: [mac_len]u8 = undefined;
         self.encrypt_with_ad(&[0]u8{}, msg[0 .. msg.len - mac_len], &mac);
         mem.copy(u8, msg[msg.len - mac_len ..], &mac);
     }
 
-    pub fn read_msg_regular(self: *CipherState, msg: []u8) !void {
+    pub fn read_msg_transport(self: *CipherState, msg: []u8) !void {
         var mac: [mac_len]u8 = undefined;
         mem.copy(u8, &mac, msg[msg.len - mac_len ..]);
         try self.decrypt_with_ad(&[0]u8{}, msg[0 .. msg.len - mac_len], mac);
     }
 };
-
-fn encrypt(
-    output: []u8,
-    mac: *[mac_len]u8,
-    ad: []const u8,
-    nonce: u64,
-    k: [key_len]u8,
-) void {
-    ChaCha20Poly1305.encrypt(output, mac, output, ad, nonce_to_bytes(nonce), k);
-}
-
-fn decrypt(
-    output: []u8,
-    mac: [mac_len]u8,
-    ad: []const u8,
-    nonce: u64,
-    k: [key_len]u8,
-) !void {
-    try ChaCha20Poly1305.decrypt(output, output, mac, ad, nonce_to_bytes(nonce), k);
-}
 
 fn nonce_to_bytes(nonce: u64) [12]u8 {
     var buffer = [_]u8{0} ** 12;
