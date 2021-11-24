@@ -42,9 +42,11 @@ fn unframe(
 
     const extension_type = try reader.readIntNative(u16);
     if (T.channel_bit_set) {
-        if (extension_type & CHANNEL_BIT_MASK == 0) return error.ExpectedChannelBitSet;
+        if (extension_type & CHANNEL_BIT_MASK == 0)
+            return error.ExpectedChannelBitSet;
     } else {
-        if (extension_type & CHANNEL_BIT_MASK != 0) return error.ExpectedChannelBitUnset;
+        if (extension_type & CHANNEL_BIT_MASK != 0)
+            return error.ExpectedChannelBitUnset;
     }
 
     const msg_type = try reader.readIntNative(u8);
