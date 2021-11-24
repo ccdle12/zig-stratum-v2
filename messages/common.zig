@@ -8,7 +8,6 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
-const check_message_invariants = types.check_message_invariants;
 const serdeTestAlloc = test_util.serdeTestAlloc;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
@@ -299,7 +298,7 @@ pub const ChannelEndpointChanged = struct {
 };
 
 test "SetupConnection message invariants" {
-    check_message_invariants(SetupConnection(MiningFlags));
+    MessageType.assertInvariants(SetupConnection(MiningFlags));
 }
 
 test "SetupConnection Mining serialize" {
@@ -378,7 +377,7 @@ test "SetupConnection Mining frame" {
 }
 
 test "SetupConnectionSuccess invariants" {
-    check_message_invariants(SetupConnectionSuccess(MiningFlags));
+    MessageType.assertInvariants(SetupConnectionSuccess(MiningFlags));
 }
 
 test "SetupConnectionSuccess serialize" {
@@ -424,7 +423,7 @@ test "SetupConnectionSuccess frame" {
 }
 
 test "SetupConnectionError invariants" {
-    check_message_invariants(SetupConnectionError(MiningFlags));
+    MessageType.assertInvariants(SetupConnectionError(MiningFlags));
 }
 
 test "SetupConnectionError serialize" {
@@ -478,7 +477,7 @@ test "SetupConnectionError frame" {
 }
 
 test "ChannelEndpointChanged invariants" {
-    check_message_invariants(ChannelEndpointChanged);
+    MessageType.assertInvariants(ChannelEndpointChanged);
 }
 
 test "ChannelEndpointChanged serialize" {

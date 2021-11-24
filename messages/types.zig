@@ -13,21 +13,6 @@ const Error = error{
     InvalidStrLength,
 };
 
-/// Checks whether T (assumed to be a StratumV2 message) contains the required
-/// invariants.
-pub fn check_message_invariants(comptime T: type) void {
-    comptime {
-        assert(!@hasField(T, "channel_bit_set"));
-        assert(@TypeOf(T.channel_bit_set) == bool);
-
-        assert(!@hasField(T, "message_type"));
-        assert(@TypeOf(T.message_type) == MessageType);
-
-        assert(!@hasField(T, "extension_type"));
-        assert(@TypeOf(T.extension_type) == u16);
-    }
-}
-
 /// MessageType contains all the byte codes for each StratumV2 message.
 pub const MessageType = enum(u8) {
     SetupConnection = 0x00,
@@ -35,6 +20,21 @@ pub const MessageType = enum(u8) {
     SetupConnectionError = 0x02,
     ChannelEndpointChanged = 0x03,
     UpdateChannel = 0x16,
+
+    /// Checks whether T (assumed to be a StratumV2 message) contains the required
+    /// invariants.
+    pub fn assertInvariants(comptime T: type) void {
+        comptime {
+            assert(!@hasField(T, "channel_bit_set"));
+            assert(@TypeOf(T.channel_bit_set) == bool);
+
+            assert(!@hasField(T, "message_type"));
+            assert(@TypeOf(T.message_type) == MessageType);
+
+            assert(!@hasField(T, "extension_type"));
+            assert(@TypeOf(T.extension_type) == u16);
+        }
+    }
 };
 
 pub const STR0_255 = struct {
