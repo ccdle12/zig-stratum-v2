@@ -42,7 +42,7 @@ fn FlagMixin(comptime T: type) type {
 }
 
 pub const UpdateChannel = struct {
-    pub const message_type: MessageType = .UpdateChannel;
+    pub const message_type = MessageType.UpdateChannel;
     pub const channel_bit_set = true;
     pub const extension_type: u16 = 0x0000;
 

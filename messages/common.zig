@@ -19,7 +19,7 @@ const MessageType = types.MessageType;
 
 pub fn SetupConnection(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnection;
+        pub const message_type = MessageType.SetupConnection;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -148,7 +148,7 @@ pub fn SetupConnection(comptime T: type) type {
 
 pub fn SetupConnectionSuccess(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnectionSuccess;
+        pub const message_type = MessageType.SetupConnectionSuccess;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -206,7 +206,7 @@ pub const SetupConnectionErrorCode = enum {
 
 pub fn SetupConnectionError(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnectionError;
+        pub const message_type = MessageType.SetupConnectionError;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -259,7 +259,7 @@ pub fn SetupConnectionError(comptime T: type) type {
 }
 
 pub const ChannelEndpointChanged = struct {
-    pub const message_type: MessageType = .ChannelEndpointChanged;
+    pub const message_type = MessageType.ChannelEndpointChanged;
     pub const channel_bit_set = true;
     pub const extension_type: u16 = 0x0000;
 
