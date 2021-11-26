@@ -56,12 +56,8 @@ pub const STR0_255 = struct {
 
     pub fn read(gpa: *mem.Allocator, reader: anytype) !STR0_255 {
         const len = try reader.readByte();
-
-        var buf: [255]u8 = undefined;
-        _ = try reader.read(buf[0..len]);
-
         const str = try gpa.alloc(u8, len);
-        mem.copy(u8, str, buf[0..len]);
+        _ = try reader.read(str);
 
         return STR0_255{ .value = str };
     }
