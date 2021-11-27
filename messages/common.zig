@@ -8,7 +8,6 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
-const check_message_invariants = types.check_message_invariants;
 const serdeTestAlloc = test_util.serdeTestAlloc;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestAlloc = test_util.frameTestAlloc;
@@ -20,7 +19,7 @@ const MessageType = types.MessageType;
 
 pub fn SetupConnection(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnection;
+        pub const message_type = MessageType.SetupConnection;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -149,7 +148,7 @@ pub fn SetupConnection(comptime T: type) type {
 
 pub fn SetupConnectionSuccess(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnectionSuccess;
+        pub const message_type = MessageType.SetupConnectionSuccess;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -207,7 +206,7 @@ pub const SetupConnectionErrorCode = enum {
 
 pub fn SetupConnectionError(comptime T: type) type {
     return struct {
-        pub const message_type: MessageType = .SetupConnectionError;
+        pub const message_type = MessageType.SetupConnectionError;
         pub const channel_bit_set = false;
         pub const extension_type: u16 = 0x0000;
 
@@ -260,7 +259,7 @@ pub fn SetupConnectionError(comptime T: type) type {
 }
 
 pub const ChannelEndpointChanged = struct {
-    pub const message_type: MessageType = .ChannelEndpointChanged;
+    pub const message_type = MessageType.ChannelEndpointChanged;
     pub const channel_bit_set = true;
     pub const extension_type: u16 = 0x0000;
 
@@ -299,7 +298,7 @@ pub const ChannelEndpointChanged = struct {
 };
 
 test "SetupConnection message invariants" {
-    check_message_invariants(SetupConnection(MiningFlags));
+    MessageType.assertInvariants(SetupConnection(MiningFlags));
 }
 
 test "SetupConnection Mining serialize" {
@@ -378,7 +377,7 @@ test "SetupConnection Mining frame" {
 }
 
 test "SetupConnectionSuccess invariants" {
-    check_message_invariants(SetupConnectionSuccess(MiningFlags));
+    MessageType.assertInvariants(SetupConnectionSuccess(MiningFlags));
 }
 
 test "SetupConnectionSuccess serialize" {
@@ -424,7 +423,7 @@ test "SetupConnectionSuccess frame" {
 }
 
 test "SetupConnectionError invariants" {
-    check_message_invariants(SetupConnectionError(MiningFlags));
+    MessageType.assertInvariants(SetupConnectionError(MiningFlags));
 }
 
 test "SetupConnectionError serialize" {
@@ -478,7 +477,7 @@ test "SetupConnectionError frame" {
 }
 
 test "ChannelEndpointChanged invariants" {
-    check_message_invariants(ChannelEndpointChanged);
+    MessageType.assertInvariants(ChannelEndpointChanged);
 }
 
 test "ChannelEndpointChanged serialize" {

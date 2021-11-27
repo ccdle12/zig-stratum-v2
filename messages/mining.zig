@@ -7,7 +7,6 @@ const testing = std.testing;
 const expect = testing.expect;
 const mem = std.mem;
 
-const check_message_invariants = types.check_message_invariants;
 const MessageType = types.MessageType;
 const serdeTestNoAlloc = test_util.serdeTestNoAlloc;
 const frameTestNoAlloc = test_util.frameTestNoAlloc;
@@ -43,7 +42,7 @@ fn FlagMixin(comptime T: type) type {
 }
 
 pub const UpdateChannel = struct {
-    pub const message_type: MessageType = .UpdateChannel;
+    pub const message_type = MessageType.UpdateChannel;
     pub const channel_bit_set = true;
     pub const extension_type: u16 = 0x0000;
 
@@ -145,7 +144,7 @@ test "MiningFlags contains" {
 }
 
 test "UpdateChannel message invariants" {
-    check_message_invariants(UpdateChannel);
+    MessageType.assertInvariants(UpdateChannel);
 }
 
 test "UpdateChannel serialize" {

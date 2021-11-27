@@ -4,7 +4,6 @@ const types = @import("./messages/types.zig");
 const assert = std.debug.assert;
 const mem = std.mem;
 
-const check_message_invariants = types.check_message_invariants;
 const MessageType = types.MessageType;
 
 /// The CHANNEL_BIT_MASK is used to mask out the MSB to identify if a message
@@ -39,13 +38,15 @@ fn unframe(
     comptime T: type,
     reader: anytype,
 ) !void {
-    check_message_invariants(T);
+    MessageType.assertInvariants(T);
 
     const extension_type = try reader.readIntNative(u16);
     if (T.channel_bit_set) {
-        if (extension_type & CHANNEL_BIT_MASK == 0) return error.ExpectedChannelBitSet;
+        if (extension_type & CHANNEL_BIT_MASK == 0)
+            return error.ExpectedChannelBitSet;
     } else {
-        if (extension_type & CHANNEL_BIT_MASK != 0) return error.ExpectedChannelBitUnset;
+        if (extension_type & CHANNEL_BIT_MASK != 0)
+            return error.ExpectedChannelBitUnset;
     }
 
     const msg_type = try reader.readIntNative(u8);
@@ -61,7 +62,7 @@ pub fn frame(
     msg: T,
     writer: anytype,
 ) !void {
-    check_message_invariants(T);
+    MessageType.assertInvariants(T);
 
     var extension_type = T.extension_type;
     if (T.channel_bit_set) extension_type |= CHANNEL_BIT_MASK;
