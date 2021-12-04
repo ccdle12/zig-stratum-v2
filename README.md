@@ -2,3 +2,7 @@
 
 # Zig Stratum V2
 
+## Requirements
+
+- `zig - 0.8.1`
+
