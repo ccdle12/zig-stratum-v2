@@ -48,7 +48,7 @@ pub const NoiseSession = struct {
     cs2: CipherState,
     // TODO: Doc comment mc
     mc: u128,
-    initiator: bool,
+    is_initiator: bool,
 
     pub const SessionState = enum {
         /// E indicates a state where the ephemeral key (self.hs.e) is generated
@@ -64,23 +64,25 @@ pub const NoiseSession = struct {
         T,
     };
 
-    pub fn init_initiator(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
+    /// Constructor for the initiator of a NoiseSession.
+    pub fn initiator(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
         return init(prologue, s, true);
     }
 
-    pub fn init_responder(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
+    /// Constructor for the responder of a NoiseSession.
+    pub fn responder(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
         return init(prologue, s, false);
     }
 
-    fn init(prologue: []const u8, s: Ed25519.KeyPair, initiator: bool) NoiseSession {
+    fn init(prologue: []const u8, s: Ed25519.KeyPair, is_initiator: bool) NoiseSession {
         return .{
             .state = .E,
-            .hs = HandshakeState.init(initiator, prologue, s, empty_key),
+            .hs = HandshakeState.init(is_initiator, prologue, s, empty_key),
             .h = empty_hash,
             .cs1 = CipherState.init(),
             .cs2 = CipherState.init(),
             .mc = 0,
-            .initiator = initiator,
+            .is_initiator = is_initiator,
         };
     }
 
@@ -124,11 +126,11 @@ pub const NoiseSession = struct {
             },
             .T => {
                 switch (send) {
-                    true => switch (self.initiator) {
+                    true => switch (self.is_initiator) {
                         true => self.cs1.write_msg_transport(msg),
                         else => self.cs2.write_msg_transport(msg),
                     },
-                    else => switch (self.initiator) {
+                    else => switch (self.is_initiator) {
                         true => try self.cs2.read_msg_transport(msg),
                         else => try self.cs1.read_msg_transport(msg),
                     },
@@ -483,8 +485,8 @@ pub fn hkdf(
 }
 
 test "full handshake" {
-    var responder = NoiseSession.init_responder("", try Ed25519.KeyPair.create(null));
-    var initiator = NoiseSession.init_initiator("", try Ed25519.KeyPair.create(null));
+    var responder = NoiseSession.responder("", try Ed25519.KeyPair.create(null));
+    var initiator = NoiseSession.initiator("", try Ed25519.KeyPair.create(null));
 
     var buf: [1024]u8 = undefined;
 
