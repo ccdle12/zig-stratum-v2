@@ -31,18 +31,36 @@ const Error = error{
     EndOfBuffer,
 };
 
+/// A NoiseSession contains the full behaviour and state to setup and perform
+/// secure communication. This uses the described pattern (Noise_NX), as suggested 
+/// in the StratumV2 spec:
+/// https://docs.google.com/document/d/1FadCWj-57dvhxsnFM_7X806qyvhR0u3i85607bGHxvg/edit#heading=h.67e0xwyzxi0u
 pub const NoiseSession = struct {
+    /// SessionState indicates the current stage of the Noise handshake.
     state: SessionState,
+    // TODO: Doc comment on the handshake state
     hs: HandshakeState,
+    // TODO: Doc comment h
     h: [hash_len]u8,
+    // TODO: Doc comment cs1
     cs1: CipherState,
+    // TODO: Doc comment cs2
     cs2: CipherState,
+    // TODO: Doc comment mc
     mc: u128,
     initiator: bool,
 
     pub const SessionState = enum {
+        /// E indicates a state where the ephemeral key (self.hs.e) is generated
+        /// and will be sent/received over the wire in an ephemeral key exchange.
         E,
+        /// ES indicates that the ephemeral key (self.hs.e) has been sent and a
+        /// cipher text of each static key will be exchanged. Once the static keys
+        /// have been received and decrypted, a CipherState will be generated for
+        /// both parties and secure communication can commence.
         ES,
+        /// T indicates a transport state, the handshakes have been completed
+        /// and both parties can communicate securely.
         T,
     };
 
@@ -127,16 +145,16 @@ pub const NoiseSession = struct {
 pub const HandshakeState = struct {
     ss: SymmetricState,
 
-    /// The local static keypair
+    /// The local static keypair.
     s: ?Ed25519.KeyPair,
 
-    /// The local ephemeral key pair
+    /// The local ephemeral keypair.
     e: ?Ed25519.KeyPair,
 
-    /// The remote parties static public key
+    /// The remote parties static public key.
     rs: [key_len]u8,
 
-    /// The remote parties ephemeral public key
+    /// The remote parties ephemeral public key.
     re: [key_len]u8,
 
     /// Indicates the initiator or responder role.
