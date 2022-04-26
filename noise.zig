@@ -23,8 +23,8 @@ pub const max_msg_len = 65535;
 pub const empty_key = [_]u8{0} ** 32;
 pub const empty_hash = [_]u8{0} ** 32;
 
-inline fn is_empty_key(key: [32]u8) bool {
-    return mem.eql(u8, &key, &empty_key);
+inline fn is_empty_key(key: *[32]u8) bool {
+    return mem.eql(u8, key, &empty_key);
 }
 
 const Error = error{
@@ -413,7 +413,7 @@ pub const CipherState = struct {
         msg: []u8,
         mac: *[mac_len]u8,
     ) void {
-        if (!is_empty_key(self.k)) {
+        if (!is_empty_key(&self.k)) {
             encrypt(msg, mac, msg, ad, nonce_to_bytes(self.n), self.k);
             self.n += 1;
         }
@@ -425,7 +425,7 @@ pub const CipherState = struct {
         msg: []u8,
         mac: [mac_len]u8,
     ) !void {
-        if (!is_empty_key(self.k)) {
+        if (!is_empty_key(&self.k)) {
             try decrypt(msg, msg, mac, ad, nonce_to_bytes(self.n), self.k);
             self.n += 1;
         }
