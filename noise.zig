@@ -23,7 +23,7 @@ pub const max_msg_len = 65535;
 pub const empty_key = [_]u8{0} ** 32;
 pub const empty_hash = [_]u8{0} ** 32;
 
-inline fn is_empty_key(key: *[32]u8) bool {
+inline fn is_empty_key(key: []const u8) bool {
     return mem.eql(u8, key, &empty_key);
 }
 
