@@ -41,7 +41,7 @@ pub const NoiseSession = struct {
 
     /// HandshakeState contains a SymmetricState and all the variables required
     /// to perform and complete the handshake/key exchange.
-    handshake_state: HandshakeState,
+    handshake: HandshakeState,
 
     /// cs1 is a CipherState that represents one side of the SymmetricState.
     /// In the case of the initiator:
@@ -92,7 +92,7 @@ pub const NoiseSession = struct {
     fn init(prologue: []const u8, static_key: Ed25519.KeyPair, is_initiator: bool) NoiseSession {
         return .{
             .session_state = .E,
-            .handshake_state = HandshakeState.init(
+            .handshake = HandshakeState.init(
                 is_initiator,
                 prologue,
                 static_key,
@@ -129,23 +129,23 @@ pub const NoiseSession = struct {
         switch (self.session_state) {
             .E => {
                 switch (send) {
-                    true => try self.handshake_state.write_msg_e(msg),
-                    else => try self.handshake_state.read_msg_e(msg),
+                    true => try self.handshake.write_msg_e(msg),
+                    else => try self.handshake.read_msg_e(msg),
                 }
                 self.session_state = .ES;
             },
             .ES => {
                 const cipher_state = blk: {
                     break :blk switch (send) {
-                        true => try self.handshake_state.write_msg_es(msg),
-                        else => try self.handshake_state.read_msg_es(msg),
+                        true => try self.handshake.write_msg_es(msg),
+                        else => try self.handshake.read_msg_es(msg),
                     };
                 };
 
                 // self.h = cipher_state.hash;
                 self.cs1 = cipher_state.cs1;
                 self.cs2 = cipher_state.cs2;
-                self.handshake_state.clear();
+                self.handshake.clear();
                 self.session_state = .T;
             },
             .T => {
@@ -169,69 +169,80 @@ pub const NoiseSession = struct {
 
     // TODO: Don't know if I need this
     pub fn symmetric_state_hash(self: *NoiseSession) []u8 {
-        return self.handshake_state.ss.hash;
+        return self.handshake.symmetric_state.hash;
     }
 };
 
 pub const HandshakeState = struct {
-    ss: SymmetricState,
+    symmetric_state: SymmetricState,
 
     /// The local static keypair.
-    s: ?Ed25519.KeyPair,
+    static_key: ?Ed25519.KeyPair,
 
     /// The local ephemeral keypair.
-    e: ?Ed25519.KeyPair,
+    ephemeral_key: ?Ed25519.KeyPair,
 
-    /// The remote parties static public key.
-    rs: [key_len]u8,
+    /// The counter parties static public key.
+    remote_static_key: [key_len]u8,
 
-    /// The remote parties ephemeral public key.
-    re: [key_len]u8,
+    /// The counter parties ephemeral public key.
+    remote_ephemeral_key: [key_len]u8,
 
     /// Indicates the initiator or responder role.
     initiator: bool,
 
     /// Pre-shared Secret Key.
-    psk: [key_len]u8,
+    pre_shared_secret: [key_len]u8,
 
     pub fn clear(self: *HandshakeState) void {
-        self.s = null;
-        self.e = null;
-        self.re = empty_key;
-        self.psk = empty_key;
+        self.static_key = null;
+        self.ephemeral_key = null;
+        self.remote_ephemeral_key = empty_key;
+        self.pre_shared_secret = empty_key;
     }
 
     pub fn init(
         initiator: bool,
         prologue: []const u8,
-        s: Ed25519.KeyPair,
-        psk: [key_len]u8,
+        static_key: Ed25519.KeyPair,
+        pre_shared_secret: [key_len]u8,
     ) HandshakeState {
         const protocol_name = "Noise_NX_25519_ChaChaPoly_BLAKE2s";
-        var ss = SymmetricState.initialize_symmetric(protocol_name);
-        ss.mix_hash(prologue);
+        var symmetric_state = SymmetricState.init(protocol_name);
+        symmetric_state.mix_hash(prologue);
 
         return .{
-            .ss = ss,
-            .s = s,
-            .e = null,
-            .rs = empty_key,
-            .re = empty_key,
+            .symmetric_state = symmetric_state,
+            .static_key = static_key,
+            .ephemeral_key = null,
+            .remote_static_key = empty_key,
+            .remote_ephemeral_key = empty_key,
             .initiator = initiator,
-            .psk = psk,
+            .pre_shared_secret = pre_shared_secret,
         };
     }
 
+    /// Writes a message at the ephemeral_key exchange stage.
     pub fn write_msg_e(self: *HandshakeState, msg: []u8) !void {
         if (msg.len < key_len)
             return error.EndOfBuffer;
 
-        if (self.e == null)
-            self.e = try Ed25519.KeyPair.create(null);
+        if (self.ephemeral_key == null)
+            self.ephemeral_key = try Ed25519.KeyPair.create(null);
 
-        mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
-        self.ss.mix_hash(msg[0..key_len]);
-        self.ss.mix_hash(msg[key_len..]);
+        mem.copy(u8, msg[0..key_len], &self.ephemeral_key.?.public_key);
+        self.symmetric_state.mix_hash(msg[0..key_len]);
+        self.symmetric_state.mix_hash(msg[key_len..]);
+    }
+
+    /// Reads a message at the ephemeral_key exchange stage.
+    pub fn read_msg_e(self: *HandshakeState, msg: []u8) !void {
+        if (msg.len < key_len + mac_len)
+            return error.EndOfBuffer;
+
+        mem.copy(u8, &self.remote_ephemeral_key, msg[0..key_len]);
+        self.symmetric_state.mix_hash(&self.remote_ephemeral_key);
+        self.symmetric_state.mix_hash(msg[key_len..]);
     }
 
     pub const CipherStateResult = struct {
@@ -240,72 +251,67 @@ pub const HandshakeState = struct {
         cs2: CipherState,
     };
 
+    /// Writes a message at the static_key exchange stage, sending a ciphertext
+    /// of the symmetric_state.
     pub fn write_msg_es(self: *HandshakeState, msg: []u8) !CipherStateResult {
         if (msg.len < key_len)
             return error.EndOfBuffer;
 
-        if (self.e == null)
-            self.e = try Ed25519.KeyPair.create(null);
+        if (self.ephemeral_key == null)
+            self.ephemeral_key = try Ed25519.KeyPair.create(null);
 
-        mem.copy(u8, msg[0..key_len], &self.e.?.public_key);
-        self.ss.mix_hash(msg[0..key_len]);
-        self.ss.mix_key(&try dh(self.e.?, self.re));
+        mem.copy(u8, msg[0..key_len], &self.ephemeral_key.?.public_key);
+        self.symmetric_state.mix_hash(msg[0..key_len]);
+        self.symmetric_state.mix_key(&try dh(self.ephemeral_key.?, self.remote_ephemeral_key));
 
         var ns = msg[key_len .. (key_len * 2) + mac_len];
-        mem.copy(u8, ns, &self.s.?.public_key);
-        try self.ss.encrypt_and_hash(ns);
+        mem.copy(u8, ns, &self.static_key.?.public_key);
+        try self.symmetric_state.encrypt_and_hash(ns);
 
-        self.ss.mix_key(&try dh(self.s.?, self.re));
-        try self.ss.encrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
+        self.symmetric_state.mix_key(&try dh(self.static_key.?, self.remote_ephemeral_key));
+        try self.symmetric_state.encrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
 
-        const cs = self.ss.split();
-        self.ss.clear();
+        const cipher_state = self.symmetric_state.split();
+        self.symmetric_state.clear();
 
         return CipherStateResult{
-            .hash = self.ss.h,
-            .cs1 = cs[0],
-            .cs2 = cs[1],
+            .hash = self.symmetric_state.h,
+            .cs1 = cipher_state[0],
+            .cs2 = cipher_state[1],
         };
     }
 
-    pub fn read_msg_e(self: *HandshakeState, msg: []u8) !void {
-        if (msg.len < key_len + mac_len)
-            return error.EndOfBuffer;
-
-        mem.copy(u8, &self.re, msg[0..key_len]);
-        self.ss.mix_hash(&self.re);
-        self.ss.mix_hash(msg[key_len..]);
-    }
-
+    /// Reads a message at the static_key exchange stage. Receives the and
+    /// decrypts the counter parties ephemeral and static key.
     pub fn read_msg_es(self: *HandshakeState, msg: []u8) !CipherStateResult {
         if (msg.len < mac_len + key_len)
             return error.EndOfBuffer;
 
-        mem.copy(u8, &self.re, msg[0..key_len]);
-        self.ss.mix_hash(&self.re);
-        self.ss.mix_key(&try dh(self.e.?, self.re));
+        mem.copy(u8, &self.remote_ephemeral_key, msg[0..key_len]);
+        self.symmetric_state.mix_hash(&self.remote_ephemeral_key);
+        self.symmetric_state.mix_key(&try dh(self.ephemeral_key.?, self.remote_ephemeral_key));
 
-        var rs = msg[key_len .. (key_len * 2) + mac_len];
-        try self.ss.decrypt_and_hash(rs);
-        mem.copy(u8, &self.rs, rs[0..key_len]);
-        self.ss.mix_key(&try dh(self.e.?, self.rs));
+        var recv_remote_static = msg[key_len .. (key_len * 2) + mac_len];
+        try self.symmetric_state.decrypt_and_hash(recv_remote_static);
+        mem.copy(u8, &self.remote_static_key, recv_remote_static[0..key_len]);
+        self.symmetric_state.mix_key(&try dh(self.ephemeral_key.?, self.remote_static_key));
 
-        try self.ss.decrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
+        try self.symmetric_state.decrypt_and_hash(msg[(key_len * 2) + mac_len ..]);
 
-        const cs = self.ss.split();
-        self.ss.clear();
+        const cipher_state = self.symmetric_state.split();
+        self.symmetric_state.clear();
 
         return CipherStateResult{
-            .hash = self.ss.h,
-            .cs1 = cs[0],
-            .cs2 = cs[1],
+            .hash = self.symmetric_state.h,
+            .cs1 = cipher_state[0],
+            .cs2 = cipher_state[1],
         };
     }
 
     fn dh(secret_keypair: Ed25519.KeyPair, key: [key_len]u8) ![key_len]u8 {
-        const s = try X25519.KeyPair.fromEd25519(secret_keypair);
-        const p = try X25519.publicKeyFromEd25519(key);
-        return try X25519.scalarmult(s.secret_key, p);
+        const secret = try X25519.KeyPair.fromEd25519(secret_keypair);
+        const public = try X25519.publicKeyFromEd25519(key);
+        return try X25519.scalarmult(secret.secret_key, public);
     }
 };
 
@@ -319,7 +325,7 @@ pub const SymmetricState = struct {
     ck: [key_len]u8,
     h: [hash_len]u8,
 
-    pub fn initialize_symmetric(protocol_name: []const u8) SymmetricState {
+    pub fn init(protocol_name: []const u8) SymmetricState {
         var hash: [hash_len]u8 = undefined;
 
         var h = Blake2s256.init(.{});
@@ -526,8 +532,8 @@ test "full handshake" {
     try expect(initiator.message_count == 1 and responder.message_count == 1);
     try expect(mem.eql(
         u8,
-        &initiator.handshake_state.ss.h,
-        &responder.handshake_state.ss.h,
+        &initiator.handshake.symmetric_state.h,
+        &responder.handshake.symmetric_state.h,
     ));
 
     // <- e..
@@ -538,8 +544,8 @@ test "full handshake" {
     try expect(responder.is_transport() and initiator.is_transport());
     try expect(mem.eql(
         u8,
-        &initiator.handshake_state.ss.h,
-        &responder.handshake_state.ss.h,
+        &initiator.handshake.symmetric_state.h,
+        &responder.handshake.symmetric_state.h,
     ));
 
     var frame: [1024]u8 = undefined;
@@ -572,21 +578,21 @@ test "HandshakeState initiator" {
     };
     const s = Ed25519.KeyPair.fromSecretKey(secret_key);
 
-    var handshake_state = HandshakeState.init(true, "", s, empty_key);
+    var handshake = HandshakeState.init(true, "", s, empty_key);
     const expected_h = [_]u8{
         0xb3, 0xf9, 0xe9, 0x6b, 0x14, 0x94, 0xc2, 0xe5, 0x52, 0xae, 0x50, 0x97,
         0x70, 0x9c, 0x09, 0x5a, 0x37, 0x9e, 0xd4, 0xe0, 0xa1, 0x2f, 0x56, 0xf1,
         0xa4, 0x8f, 0x14, 0x98, 0xc2, 0xbb, 0x6d, 0x6d,
     };
-    try expect(mem.eql(u8, &handshake_state.ss.h, &expected_h));
+    try expect(mem.eql(u8, &handshake.symmetric_state.h, &expected_h));
 
     const expected_ck = [_]u8{
         0x92, 0x27, 0xce, 0x1a, 0x77, 0x03, 0x3d, 0xf3, 0xf2, 0x4c, 0xd1, 0x92,
         0xc1, 0x9c, 0x0b, 0xbe, 0xa8, 0xd5, 0xd7, 0x0a, 0x36, 0xc4, 0x83, 0x7f,
         0xdc, 0x6f, 0xf1, 0x41, 0x8f, 0x04, 0xb4, 0x25,
     };
-    try expect(mem.eql(u8, &handshake_state.ss.ck, &expected_ck));
-    try expect(handshake_state.e == null);
+    try expect(mem.eql(u8, &handshake.symmetric_state.ck, &expected_ck));
+    try expect(handshake.ephemeral_key == null);
 }
 
 test "nonce to bytes" {
