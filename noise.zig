@@ -37,27 +37,42 @@ const Error = error{
 /// https://docs.google.com/document/d/1FadCWj-57dvhxsnFM_7X806qyvhR0u3i85607bGHxvg/edit#heading=h.67e0xwyzxi0u
 pub const NoiseSession = struct {
     /// SessionState indicates the current stage of the Noise handshake.
-    state: SessionState,
-    // TODO: Doc comment on the handshake state
-    hs: HandshakeState,
-    // TODO: Doc comment h
-    h: [hash_len]u8,
-    // TODO: Doc comment cs1
+    session_state: SessionState,
+
+    /// HandshakeState contains a SymmetricState and all the variables required
+    /// to perform and complete the handshake/key exchange.
+    handshake_state: HandshakeState,
+
+    /// cs1 is a CipherState that represents one side of the SymmetricState.
+    /// In the case of the initiator:
+    ///     - cs1 would be used to write over the wire.
+    /// In the case of the responder:
+    ///     - cs1 would be used to read from the wire.
     cs1: CipherState,
-    // TODO: Doc comment cs2
+
+    /// cs2 is a CipherState that represents the other side of the SymmetricState.
+    /// In the case of the initiaor:
+    ///     - cs2 would be used to read from the wire.
+    /// In the case of the responder:
+    ///     - cs2 would be used to write over the wire.
     cs2: CipherState,
-    // TODO: Doc comment mc
-    mc: u128,
+
+    /// Simply tracks the number of messages received during the session.
+    message_count: u128,
+
+    /// A flag to indicate whether the creator of the NoiseSession is the initiator
+    /// or responder. It has implications on the expected ordering of messages
+    /// and mixing of keys.
     is_initiator: bool,
 
     pub const SessionState = enum {
-        /// E indicates a state where the ephemeral key (self.hs.e) is generated
-        /// and will be sent/received over the wire in an ephemeral key exchange.
+        /// E indicates a state where the ephemeral key is generated and will be 
+        /// sent/received over the wire in an ephemeral key exchange.
         E,
-        /// ES indicates that the ephemeral key (self.hs.e) has been sent and a
-        /// cipher text of each static key will be exchanged. Once the static keys
-        /// have been received and decrypted, a CipherState will be generated for
-        /// both parties and secure communication can commence.
+        /// ES indicates that the ephemeral key has been sent and a cipher text 
+        /// of each static key will be exchanged. Once the static keys have been 
+        /// received and decrypted, a CipherState will be generated for both 
+        /// parties and secure communication can commence.
         ES,
         /// T indicates a transport state, the handshakes have been completed
         /// and both parties can communicate securely.
@@ -65,23 +80,31 @@ pub const NoiseSession = struct {
     };
 
     /// Constructor for the initiator of a NoiseSession.
-    pub fn initiator(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
-        return init(prologue, s, true);
+    pub fn initiator(prologue: []const u8, static_key: Ed25519.KeyPair) NoiseSession {
+        return init(prologue, static_key, true);
     }
 
     /// Constructor for the responder of a NoiseSession.
-    pub fn responder(prologue: []const u8, s: Ed25519.KeyPair) NoiseSession {
-        return init(prologue, s, false);
+    pub fn responder(prologue: []const u8, static_key: Ed25519.KeyPair) NoiseSession {
+        return init(prologue, static_key, false);
     }
 
-    fn init(prologue: []const u8, s: Ed25519.KeyPair, is_initiator: bool) NoiseSession {
+    fn init(prologue: []const u8, static_key: Ed25519.KeyPair, is_initiator: bool) NoiseSession {
         return .{
-            .state = .E,
-            .hs = HandshakeState.init(is_initiator, prologue, s, empty_key),
-            .h = empty_hash,
+            .session_state = .E,
+            .handshake_state = HandshakeState.init(
+                is_initiator,
+                prologue,
+                static_key,
+                empty_key,
+            ),
+
+            // TODO: I don't think I really need to assign the hash so maybe
+            // can remove it from CipherStateResult as well
+            // .h = empty_hash,
             .cs1 = CipherState.init(),
             .cs2 = CipherState.init(),
-            .mc = 0,
+            .message_count = 0,
             .is_initiator = is_initiator,
         };
     }
@@ -91,7 +114,7 @@ pub const NoiseSession = struct {
             return error.EndOfBuffer;
 
         try self.process_msg(msg, true);
-        self.mc += 1;
+        self.message_count += 1;
     }
 
     pub fn read_msg(self: *NoiseSession, msg: []u8) !void {
@@ -99,30 +122,31 @@ pub const NoiseSession = struct {
             return error.EndOfBuffer;
 
         try self.process_msg(msg, false);
-        self.mc += 1;
+        self.message_count += 1;
     }
 
     fn process_msg(self: *NoiseSession, msg: []u8, send: bool) !void {
-        switch (self.state) {
+        switch (self.session_state) {
             .E => {
                 switch (send) {
-                    true => try self.hs.write_msg_e(msg),
-                    else => try self.hs.read_msg_e(msg),
+                    true => try self.handshake_state.write_msg_e(msg),
+                    else => try self.handshake_state.read_msg_e(msg),
                 }
-                self.state = .ES;
+                self.session_state = .ES;
             },
             .ES => {
                 const cipher_state = blk: {
                     break :blk switch (send) {
-                        true => try self.hs.write_msg_es(msg),
-                        else => try self.hs.read_msg_es(msg),
+                        true => try self.handshake_state.write_msg_es(msg),
+                        else => try self.handshake_state.read_msg_es(msg),
                     };
                 };
-                self.h = cipher_state.hash;
+
+                // self.h = cipher_state.hash;
                 self.cs1 = cipher_state.cs1;
                 self.cs2 = cipher_state.cs2;
-                self.hs.clear();
-                self.state = .T;
+                self.handshake_state.clear();
+                self.session_state = .T;
             },
             .T => {
                 switch (send) {
@@ -139,8 +163,13 @@ pub const NoiseSession = struct {
         }
     }
 
-    pub fn is_transport(self: NoiseSession) bool {
-        return self.state == .T;
+    pub fn is_transport(self: *NoiseSession) bool {
+        return self.session_state == .T;
+    }
+
+    // TODO: Don't know if I need this
+    pub fn symmetric_state_hash(self: *NoiseSession) []u8 {
+        return self.handshake_state.ss.hash;
     }
 };
 
@@ -494,16 +523,24 @@ test "full handshake" {
     try initiator.send_msg(&buf);
     try responder.read_msg(&buf);
 
-    try expect(initiator.mc == 1 and responder.mc == 1);
-    try expect(mem.eql(u8, &initiator.hs.ss.h, &responder.hs.ss.h));
+    try expect(initiator.message_count == 1 and responder.message_count == 1);
+    try expect(mem.eql(
+        u8,
+        &initiator.handshake_state.ss.h,
+        &responder.handshake_state.ss.h,
+    ));
 
     // <- e..
     try responder.send_msg(&buf);
     try initiator.read_msg(&buf);
 
-    try expect(responder.mc == 2 and initiator.mc == 2);
+    try expect(responder.message_count == 2 and initiator.message_count == 2);
     try expect(responder.is_transport() and initiator.is_transport());
-    try expect(mem.eql(u8, &initiator.hs.ss.h, &responder.hs.ss.h));
+    try expect(mem.eql(
+        u8,
+        &initiator.handshake_state.ss.h,
+        &responder.handshake_state.ss.h,
+    ));
 
     var frame: [1024]u8 = undefined;
     var msg = [_]u8{2} ** 200;
